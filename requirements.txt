@@ -1,0 +1,9 @@
+numpy==1.24.2
+pandas==1.4.4
+scikit-learn==1.2.1
+tensorboard==2.15.1
+torch==2.1.2
+torch-geometric==2.4.0
+torchmetrics==1.2.1
+seaborn==0.12.2
+pytorch-lightning==2.1.3

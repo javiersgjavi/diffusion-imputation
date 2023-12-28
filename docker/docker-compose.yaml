@@ -1,0 +1,15 @@
+version: "3.7"
+
+services:
+
+ container_imputate_image_diffusion:
+  image: imputate_image_diffusion
+  volumes:
+   - ../:/app/
+  stdin_open: true
+  tty: true
+  deploy:
+   resources:
+    reservations:
+     devices:
+      - capabilities: [gpu]
