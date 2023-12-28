@@ -3,7 +3,7 @@ sys.path.append('./')
 
 from torch.optim import Adam
 from src.data.traffic import MetrLADataset
-from src.model.engine import CustomImputer
+from src.model.engine import DiffusionImputer
 from src.model.diffusion_model import DiffusionModel
 
 from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
@@ -13,7 +13,7 @@ from pytorch_lightning import Trainer
 
 def main():
     dm = MetrLADataset()
-    imputer = CustomImputer(
+    imputer = DiffusionImputer(
         model_class= DiffusionModel,
         model_kwargs=None,
         optim_class=Adam,
