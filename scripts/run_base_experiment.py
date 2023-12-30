@@ -1,22 +1,23 @@
 import sys
 sys.path.append('./')
 
-from torch.optim import Adam
+from torch.optim import Adam, AdamW
 from src.data.traffic import MetrLADataset
-from src.model.engine import DiffusionImputer
-from src.model.diffusion_model import DiffusionModel
+from src.models.engine import DiffusionImputer
+from src.models.diffusion_model import DiffusionModel
 
-from pytorch_lightning.loggers import TensorBoardLogger, WandbLogger
+from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning import Trainer
 
 
 def main():
-    dm = MetrLADataset()
+    dm = MetrLADataset().get_dm()
+
     imputer = DiffusionImputer(
         model_class= DiffusionModel,
         model_kwargs=None,
-        optim_class=Adam,
+        optim_class=AdamW,
         optim_kwargs=dict({'lr': 1e-3}),
         whiten_prob=None,
         prediction_loss_weight=1,
@@ -26,21 +27,19 @@ def main():
         scheduler_kwargs=None,
     )
 
-    logger = WandbLogger(
-        name='base_experiment',
-        offline=True,
-        project='tsl',
+    logger = TensorBoardLogger(
+        save_dir='./logs',
     )
 
     callbaks = [
         EarlyStopping(
-            monitor='val_mse',
-            patience=2,
+            monitor='val_loss',
+            patience=200,
             verbose=True,
             mode='min'
         ),
         ModelCheckpoint(
-            monitor='val_mse',
+            monitor='val_loss',
             filename='base_experiment',
             save_top_k=1,
             mode='min'
@@ -48,16 +47,17 @@ def main():
     ]
 
     trainer = Trainer(
-        max_epochs=10,
+        max_epochs=100,
         default_root_dir='./logs',
         logger=logger,
         accelerator='gpu',
         devices=1,
         callbacks=callbaks,
         )
-    
+
     trainer.fit(imputer, dm)
 
+    trainer.test(imputer, datamodule=dm)
 
 if __name__=='__main__':
     main()
