@@ -4,7 +4,7 @@ sys.path.append('./')
 from torch.optim import Adam, AdamW
 from src.data.traffic import MetrLADataset
 from src.models.engine import DiffusionImputer
-from src.models.diffusion_model import DiffusionModel
+from models.diffusion import DiffusionModel
 
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint

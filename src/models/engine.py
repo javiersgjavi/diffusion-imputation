@@ -2,7 +2,7 @@ import torch
 from tsl.engines.imputer import Imputer
 from tsl.metrics import torch as torch_metrics
 
-from src.models.diffusion_model import DiffusionModel
+from models.diffusion import DiffusionModel
 
 class TimeStepSampler:
     def __init__(self, noise_step=1000, size=1e5, device='cpu'):
