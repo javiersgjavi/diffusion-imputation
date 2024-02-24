@@ -57,7 +57,7 @@ class TrafficDataset:
             dataset=torch_dataset,
             scalers=scalers,
             splitter=splitter,
-            batch_size=64,
+            batch_size=8,
             )
         
         #self.dm.setup()

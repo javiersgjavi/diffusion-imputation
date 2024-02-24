@@ -3,8 +3,7 @@ sys.path.append('./')
 
 from torch.optim import Adam, AdamW
 from src.data.traffic import MetrLADataset
-from src.models.engine import DiffusionImputer
-from models.diffusion import DiffusionModel
+from src.models.diffusion import DiffusionImputer
 
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
@@ -15,7 +14,6 @@ def main():
     dm = MetrLADataset().get_dm()
 
     imputer = DiffusionImputer(
-        model_class= DiffusionModel,
         model_kwargs=None,
         optim_class=AdamW,
         optim_kwargs=dict({'lr': 1e-3}),

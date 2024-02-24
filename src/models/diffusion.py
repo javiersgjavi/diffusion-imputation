@@ -5,19 +5,21 @@ import pytorch_lightning as pl
 from diffusers import DDPMScheduler
 from tsl.engines.imputer import Imputer
 from tsl.metrics import torch as torch_metrics
+from src.models.unet import UNet
 
 
 class RandomStack:
-    def __init__(self, high, low, device='cpu', size=1e6):
+    def __init__(self, low, high, device='cpu', size=1e6):
         self.size = int(size)
         self.high = high
         self.low = low
-        self.stack = torch.randint(low=low, high=high, size=(self.size,)).to(device)
+        self.stack = torch.randint(low=low, high=high, size=(self.size,))
         self.idx = 0
+        self.device = device
 
     def get(self, n=1):
         if self.idx + n >= self.size:
-            self.stack = torch.randint(low=self.low, high=self.high, size=(self.size,)).to(self.stack.device)
+            self.stack = torch.randint(low=self.low, high=self.high, size=(self.size,))
             self.idx = 0
         res = self.stack[self.idx: self.idx + n]
         self.idx += n
@@ -30,8 +32,9 @@ class Scheduler(DDPMScheduler):
         return super().add_noise(x, noise, step), noise
     
     def backwards(self, x_t, predicted_noise, step):
-        step = step[0]
-        return super().step(predicted_noise, step, x_t).prev_sample
+        # mirar si puedo quitarme el .cpu()
+        step = step[0].int()
+        return super().step(predicted_noise.cpu(), step.cpu(), x_t.cpu()).prev_sample.to(x_t.device)
     
 
 class DiffusionImputer(Imputer):
@@ -43,10 +46,10 @@ class DiffusionImputer(Imputer):
             'mre': torch_metrics.MaskedMRE()
         }
         super().__init__(*args, **kwargs)
-        self.num_steps = 1000
-        self.t_sampler = RandomStack(1, self.num_steps, device=self.device)
+        self.num_T = 1000
+        self.t_sampler = RandomStack(1, self.num_T, device=self.device)
         self.loss_fn = torch_metrics.MaskedMSE()
-        self.model = None
+        self.model = UNet()
         self.scheduler = Scheduler()
 
     def configure_optimizers(self):
@@ -63,9 +66,9 @@ class DiffusionImputer(Imputer):
         mask = batch.mask
         eval_mask = batch.eval_mask
 
-        t = self.t_sampler.get(x.shape[0])
+        t = self.t_sampler.get(x.shape[0]).to(x.device)
 
-        x_t, noise = self.scheduler.forward()
+        x_t, noise = self.scheduler.forward(x, t)
 
         x_t = torch.where(mask.bool(), x, x_t)
 
@@ -77,14 +80,14 @@ class DiffusionImputer(Imputer):
         return loss
 
     def validation_step(self, batch, batch_idx):
-        loss = self.get_loss(batch)
-        self.log('val_loss', loss, prog_bar=True, on_epoch=True)
-
+        x_t = self.get_imputation(batch)
+        self.val_metrics(x_t, batch.x, batch.eval_mask)
     def test_step(self, batch, batch_idx):
-        loss = self.get_loss(batch)
+        loss = self.get_imputation(batch)
         return loss
     
-    def impute(self, batch):
+    def get_imputation(self, batch):
+        
         x = batch.x
         u = batch.u
         edge_index = batch.edge_index
@@ -94,7 +97,7 @@ class DiffusionImputer(Imputer):
 
         x_t = torch.where(mask.bool(), x, torch.rand_like(x).to(x.device))
 
-        steps_chain = range(1, self.noise_steps)
+        steps_chain = range(1, self.num_T//100)
         pbar = tqdm(steps_chain, desc=f'[INFO] Imputing batch...')
         for i in reversed(steps_chain):
             t = (torch.ones(x.shape[0]) * i).to(x.device)
@@ -103,6 +106,4 @@ class DiffusionImputer(Imputer):
             x_t = torch.where(mask.bool(), x, x_t)
             pbar.update(1)
 
-        loss = torch_metrics.MaskedMAE(x, x_t, eval_mask)
-
-        return loss
+        return x_t
