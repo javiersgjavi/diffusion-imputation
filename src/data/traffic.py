@@ -60,7 +60,7 @@ class TrafficDataset:
             batch_size=64,
             )
         
-        self.dm.setup()
+        #self.dm.setup()
 
     def get_dm(self):
         return self.dm

@@ -45,7 +45,7 @@ class DiffusionImputer(Imputer):
         super().__init__(*args, **kwargs)
         self.num_steps = 1000
         self.t_sampler = RandomStack(1, self.num_steps, device=self.device)
-        self.loss_fn = torch.nn.MSELoss()
+        self.loss_fn = torch_metrics.MaskedMSE()
         self.model = None
         self.scheduler = Scheduler()
 
@@ -55,12 +55,24 @@ class DiffusionImputer(Imputer):
         return [optim], [scheduler]
     
     def training_step(self, batch, batch_id):
-        # más o menos, pero va a haber que actualizarlo
-        x, y = batch
+        # más o menos, pero va a haber que actualizarlo (Se podría pasar a veces None como condicional y ver si funciona como CFG)
+        x = batch.x
+        u = batch.u
+        edge_index = batch.edge_index
+        edge_weight = batch.edge_weight
+        mask = batch.mask
+        eval_mask = batch.eval_mask
+
         t = self.t_sampler.get(x.shape[0])
-        x_t, noise = self.scheduler.forward(x, t)
-        noise_pred = self.model(x_t, t)
-        loss = self.loss_fn(noise, noise_pred)
+
+        x_t, noise = self.scheduler.forward()
+
+        x_t = torch.where(mask.bool(), x, x_t)
+
+        noise_pred = self.model(x_t, t)#(x_t, t, mask, edge_index, edge_weight)
+
+        loss = self.loss_fn(noise, noise_pred, eval_mask)
+
         self.log('train_loss', loss, prog_bar=True, on_step=True)#, on_epoch=True)
         return loss
 
@@ -73,13 +85,24 @@ class DiffusionImputer(Imputer):
         return loss
     
     def impute(self, batch):
-        x, y = batch
-        mask = None
-        pbar = tqdm(range(1, self.noise_steps), desc=f'[INFO] Imputing batch...')
-        x_t = torch.randn_like(x).to(x.device)
-        for i in reversed(range(1, self.noise_steps)):
+        x = batch.x
+        u = batch.u
+        edge_index = batch.edge_index
+        edge_weight = batch.edge_weight
+        mask = batch.mask
+        eval_mask = batch.eval_mask
+
+        x_t = torch.where(mask.bool(), x, torch.rand_like(x).to(x.device))
+
+        steps_chain = range(1, self.noise_steps)
+        pbar = tqdm(steps_chain, desc=f'[INFO] Imputing batch...')
+        for i in reversed(steps_chain):
             t = (torch.ones(x.shape[0]) * i).to(x.device)
-            noise_pred = self.model(x_t, t)
+            noise_pred = self.model(x_t, t)#(x_t, t, mask, edge_index, edge_weight)
             x_t = self.scheduler.backwards(x_t, noise_pred, t)
+            x_t = torch.where(mask.bool(), x, x_t)
             pbar.update(1)
-        return torch_metrics.MaskedMAE()(x, x_t, mask)
+
+        loss = torch_metrics.MaskedMAE(x, x_t, eval_mask)
+
+        return loss
