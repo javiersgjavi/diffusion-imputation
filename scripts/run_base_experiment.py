@@ -11,6 +11,7 @@ from pytorch_lightning import Trainer
 
 
 def main():
+    
     dm = MetrLADataset().get_dm()
 
     imputer = DiffusionImputer(
@@ -45,12 +46,12 @@ def main():
     ]
 
     trainer = Trainer(
-        max_epochs=100,
+        max_epochs=1000,
         default_root_dir='./logs',
         logger=logger,
         accelerator='gpu',
-        devices=1,
-        callbacks=callbaks,
+        devices=[2],
+        #callbacks=callbaks,
         )
 
     trainer.fit(imputer, dm)

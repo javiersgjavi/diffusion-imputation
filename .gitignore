@@ -2,6 +2,7 @@ pruebas.ipynb
 wandb/*
 logs/*
 tsl/*
+nohup.out
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
