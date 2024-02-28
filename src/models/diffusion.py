@@ -38,7 +38,7 @@ class Scheduler(DDPMScheduler):
     
 
 class DiffusionImputer(Imputer):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, scheduler_type='squaredcos_cap_v2', *args, **kwargs):
         kwargs['metrics'] = {
             'mae': torch_metrics.MaskedMAE(),
             #'rmse': torch_metrics.MaskedRMSE(),
@@ -50,7 +50,7 @@ class DiffusionImputer(Imputer):
         self.t_sampler = RandomStack(1, self.num_T, device=self.device)
         self.loss_fn = torch_metrics.MaskedMSE()
         self.model = BiModel()#UNet
-        self.scheduler = Scheduler()
+        self.scheduler = Scheduler(beta_schedule=scheduler_type)
 
     def configure_optimizers(self):
         optim = torch.optim.AdamW(self.model.parameters(), lr=1e-3, weight_decay=0.1)
