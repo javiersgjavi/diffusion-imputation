@@ -82,12 +82,12 @@ class UniModel(nn.Module):
         cond_embedding = self.cond_encoder(t, cond_info)
 
         #x += cond_embedding
-        x = self.encoder(x, u=cond_embedding) if self.name != 'stcn' else self.encoder(x, edges, weights)
+        h = self.encoder(x, u=cond_embedding) if self.name != 'stcn' else self.encoder(x, edges, weights)
 
         #x += cond_embedding
-        x = torch.cat([x, cond_embedding], dim=-1)
-        x = self.decoder(x, edges, weights)
-        return x
+        h = torch.cat([h, x, cond_embedding], dim=-1)
+        h = self.decoder(h, edges, weights)
+        return h
 
 class BiModel(nn.Module):
 
@@ -106,7 +106,7 @@ class BiModel(nn.Module):
                 'exog_size': 256,
             },
             'decoder':{
-                'input_size': 1 + 256,
+                'input_size': 2 + 256,
                 'hidden_size': 64,
                 'output_size': 1,
                 'horizon': 24,
@@ -114,7 +114,7 @@ class BiModel(nn.Module):
                 'dropout': 0.1,
             },
             'mlp':{
-                'input_size': 2,
+                'input_size': 3,
                 'exog_size': 256,
                 'output_size': 1,
                 'hidden_size': 64,
@@ -141,7 +141,8 @@ class BiModel(nn.Module):
 
         h = torch.cat([
             f_representation,# + cond_info,
-            b_representation# + cond_info
+            b_representation,# + cond_info
+            x
             ], dim=-1)
         
         return self.decoder_mlp(h, u=cond_info)
