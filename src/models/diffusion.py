@@ -62,12 +62,10 @@ class DiffusionImputer(Imputer):
         # Esto se supone que es la Figura 5 del paper de CSDI
         zero = torch.zeros_like(x_co_0)
 
-        x_0_ta = torch.where(mask_ta, x_real_0, zero)
-
-        x_noisy_t, noise = self.scheduler.forward(x_real_0, t)
+        x_noisy_t, noise = self.scheduler.forward(x_real_0, t) # esto puede ser un punto de fallo
         x_ta_t = torch.where(mask_co.bool(), zero, x_noisy_t)
 
-        cond_info = torch.cat([x_0_ta, mask_co], dim=-1)
+        cond_info = torch.cat([x_co_0, mask_co], dim=-1)
         return x_ta_t, cond_info, noise
 
     def training_step(self, batch, batch_id):

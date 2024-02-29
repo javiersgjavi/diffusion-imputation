@@ -8,10 +8,9 @@ from src.utils import init_weights_xavier, clean_hyperparams, get_encoder, defin
 
 
 class TEncoder(nn.Module):
-    def __init__(self, channels, time_dim=256,):
+    def __init__(self, channels=256):
         super().__init__()
         self.channels  = channels
-        self.time_dim = time_dim
 
         self.inv_freq = 1.0 / (
             10000
@@ -48,7 +47,7 @@ class ConditionalEncoder(nn.Module):
         self.time_shape = time_shape
         self.output_size = output_size
         self.t_resampler = nn.Sequential(
-                nn.Linear(256, output_size),
+                nn.Linear(256, output_size), # aquí hay un problema, no puedes comprimir las 256 ondas a dos
                 nn.ReLU(),
             )
 
