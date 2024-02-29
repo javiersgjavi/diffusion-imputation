@@ -58,7 +58,7 @@ class DiffusionImputer(Imputer):
         return [optim], [scheduler]
 
 
-    def obtain_data_masked(self, x_co_0, x_real_0, mask_co, mask_ta, t):
+    def obtain_data_masked(self, x_co_0, x_real_0, mask_co, t):
         # Esto se supone que es la Figura 5 del paper de CSDI
         zero = torch.zeros_like(x_co_0)
 
@@ -80,43 +80,67 @@ class DiffusionImputer(Imputer):
 
 
         t = self.t_sampler.get(x_co_0.shape[0]).to(x_co_0.device)
-        x_ta_t, cond_info, noise = self.obtain_data_masked(x_co_0, x_real_0, mask_co, mask_ta, t)
+        x_ta_t, cond_info, noise = self.obtain_data_masked(x_co_0, x_real_0, mask_co, t)
 
         noise_pred = self.model(x_ta_t, t, cond_info, edge_index, edge_weight)
 
         loss = self.loss_fn(noise, noise_pred, mask_ta)
 
-        self.log('train_loss', loss, prog_bar=True, on_step=True)#, on_epoch=True)
+        # Update metrics
+        self.train_metrics.update(noise, noise_pred, mask_ta)
+        self.log_dict(self.train_metrics, batch_size=batch.batch_size, prog_bar=False, logger=True, on_epoch=True, on_step=False)
+        self.log('train_loss', loss, batch_size=batch.batch_size, prog_bar=True, logger=True, on_epoch=True, on_step=False)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        pass
-        '''x_t = self.get_imputation(batch)
-        self.val_metrics(x_t, batch.x, batch.eval_mask)'''
+        x_t = self.get_imputation(batch)
+        target = batch.y
+        eval_mask = batch.eval_mask
+    
+        val_loss = self.loss_fn(x_t, target, eval_mask)
+
+        self.val_metrics.update(x_t, target, eval_mask)
+        self.log_dict(self.val_metrics, batch_size=batch.batch_size, prog_bar=False, logger=True, on_epoch=True, on_step=False)
+        self.log('val_loss', val_loss, batch_size=batch.batch_size, prog_bar=True, logger=True, on_epoch=True, on_step=False)
+        #self.log_loss('val', val_loss, batch_size=batch.batch_size)
+        #self.log('val_loss', mae, prog_bar=True, on_epoch=True)
 
     def test_step(self, batch, batch_idx):
         x_t = self.get_imputation(batch)
-        self.test_metrics(x_t, batch.x, batch.eval_mask)
+        target = batch.y
+        eval_mask = batch.eval_mask
+    
+        val_loss = self.loss_fn(x_t, target, eval_mask)
+
+        self.val_metrics.update(x_t, target, eval_mask)
+        self.log_metrics(self.val_metrics, batch_size=batch.batch_size)
+        self.log_loss('test', val_loss, batch_size=batch.batch_size)
     
     def get_imputation(self, batch):
         
-        x = batch.x
+        # más o menos, pero va a haber que actualizarlo (Se podría pasar a veces None como condicional y ver si funciona como CFG)
+        x_co_0 = batch.x
+        x_real_0 = batch.transform['y'](batch.y)
         u = batch.u
         edge_index = batch.edge_index
         edge_weight = batch.edge_weight
-        mask = batch.mask
-        eval_mask = batch.eval_mask
-        cond_info = torch.cat([x, mask], dim=-1)
+        mask_co = batch.mask
+        mask_ta = batch.eval_mask
+        transform = batch.transform
 
-        x_t = torch.where(mask.bool(), x, torch.rand_like(x).to(x.device))
+        zero = torch.zeros_like(x_co_0)
+        noise = torch.randn_like(x_co_0)
 
-        steps_chain = range(1, self.num_T//100)
-        #pbar = tqdm(steps_chain, desc=f'[INFO] Imputing batch...')
+        x_ta_t = torch.where(mask_co.bool(), zero, noise)
+        cond_info = torch.cat([x_co_0, mask_co], dim=-1)
+
+        steps_chain = range(1, self.num_T)
+        pbar = tqdm(steps_chain, desc=f'[INFO] Imputing batch...')
         for i in reversed(steps_chain):
-            t = (torch.ones(x.shape[0]) * i)
-            noise_pred = self.model(x_t, t, cond_info, edge_index, edge_weight)
-            x_t = self.scheduler.backwards(x_t, noise_pred, t)
-            x_t = torch.where(mask.bool(), x, x_t)
-            #pbar.update(1)
+            t = (torch.ones(x_ta_t.shape[0]) * i)
+            noise_pred = self.model(x_ta_t, t, cond_info, edge_index, edge_weight)
+            x_ta_t = self.scheduler.backwards(x_ta_t, noise_pred, t)
+            pbar.update(1)
 
-        return x_t
+        x_0 = transform['x'].inverse_transform(x_ta_t)
+        return x_0
