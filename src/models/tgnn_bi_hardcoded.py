@@ -3,6 +3,7 @@ from torch import nn
 
 from tsl.nn.blocks.decoders import GCNDecoder
 from tsl.nn.blocks.encoders.conditional import ConditionalBlock
+from tsl.nn.blocks.encoders import MLP
 
 from src.utils import init_weights_xavier, clean_hyperparams, get_encoder, define_mlp_decoder
 
@@ -25,7 +26,7 @@ class TEncoder(nn.Module):
         return pos_enc
 
 class ConditionalEncoder(nn.Module):
-    def __init__(self, hyperparameters=None, use_cond_info = True, output_size=None, time_shape=None):
+    def __init__(self, hyperparameters=None, use_cond_info = True, output_size=None, time_shape=None, node_shape=None):
         super().__init__()
 
         hyperparameters = {
@@ -33,11 +34,12 @@ class ConditionalEncoder(nn.Module):
             'encoder': {
                 'input_channels': 2,
                 'hidden_channels': 64,
-                'output_channels': 1,
+                'output_channels': 256,
                 'kernel_size': 3,
                 'dropout': 0.1,
                 'n_layers': 4,
-                'dilation': 1
+                'dilation': 1,
+                'exog_channels':256
             }
         }
 
@@ -45,6 +47,7 @@ class ConditionalEncoder(nn.Module):
         self.output_size = 2
         self.use_cond_info = use_cond_info
         self.time_shape = time_shape
+        self.node_shape = 207
         self.output_size = output_size
         self.t_resampler = nn.Sequential(
                 nn.Linear(256, output_size), # aquí hay un problema, no puedes comprimir las 256 ondas a dos
@@ -55,13 +58,11 @@ class ConditionalEncoder(nn.Module):
             self.cond_block = get_encoder(hyperparameters['encoder_name'])(**hyperparameters['encoder']).apply(init_weights_xavier)
 
             
-    def forward(self, t, u):
+    def forward(self, t, cond_info):
         device = next(self.t_resampler.parameters()).device # Esto hay que revisarlo, lo he puesto para mover t a gpu
-        t_emb = self.pos_encoding(t).to(device)
-        cond_emb = self.t_resampler(t_emb).view(t.shape[0], 1, self.output_size, 1).repeat(1, self.time_shape, 1, 1) # Resample t to (B, T, N, F)
+        t_emb = self.pos_encoding(t).to(device).view(t.shape[0], 1, 1, 256).repeat((1, self.time_shape, self.node_shape, 1)) # Resample t to (B, T, N, F)
         if self.use_cond_info:
-            u_emb = self.cond_block(u)
-            cond_emb += u_emb
+            cond_emb = self.cond_block(cond_info, u=t_emb) # (B, T, N, F)
         return cond_emb
 
 class UniModel(nn.Module):
@@ -80,10 +81,11 @@ class UniModel(nn.Module):
 
         cond_embedding = self.cond_encoder(t, cond_info)
 
-        x += cond_embedding
-        x = self.encoder(x) if self.name != 'stcn' else self.encoder(x, edges, weights)
+        #x += cond_embedding
+        x = self.encoder(x, u=cond_embedding) if self.name != 'stcn' else self.encoder(x, edges, weights)
 
-        x += cond_embedding
+        #x += cond_embedding
+        x = torch.cat([x, cond_embedding], dim=-1)
         x = self.decoder(x, edges, weights)
         return x
 
@@ -100,28 +102,32 @@ class BiModel(nn.Module):
                 'exog_size': 0,
                 'n_layers':3,
                 'dropout':0.1,
-                'cell':'gru'
+                'cell':'gru',
+                'exog_size': 256,
             },
             'decoder':{
-                'input_size': 1,
+                'input_size': 1 + 256,
                 'hidden_size': 64,
                 'output_size': 1,
                 'horizon': 24,
                 'n_layers': 2,
-                'dropout': 0.1
+                'dropout': 0.1,
+            },
+            'mlp':{
+                'input_size': 2,
+                'exog_size': 256,
+                'output_size': 1,
+                'hidden_size': 64,
+                'n_layers': 3,
+                'dropout': 0.1,
+                'activation': 'silu'
             }
         }
         self.model_f = UniModel(args)
         self.model_b = UniModel(args)
         self.cond_emb = ConditionalEncoder(output_size=207, time_shape=24)
 
-        self.decoder_mlp = nn.Sequential(
-            nn.Linear(2, 10),
-            nn.ReLU(),
-            nn.Linear(10, 5),
-            nn.ReLU(),
-            nn.Linear(5, 1)
-        )
+        self.decoder_mlp = MLP(**args['mlp']).apply(init_weights_xavier)
    
     def forward(self, x, t, cond_info, edges, weights):
 
@@ -134,9 +140,9 @@ class BiModel(nn.Module):
         cond_info = self.cond_emb(t, cond_info)
 
         h = torch.cat([
-            f_representation + cond_info,
-            b_representation + cond_info
+            f_representation,# + cond_info,
+            b_representation# + cond_info
             ], dim=-1)
         
-        return self.decoder_mlp(h)
+        return self.decoder_mlp(h, u=cond_info)
     
