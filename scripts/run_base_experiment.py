@@ -52,7 +52,7 @@ def main():
         accelerator='gpu',
         devices=[0],
         #callbacks=callbaks,
-        check_val_every_n_epoch=1e6,
+        check_val_every_n_epoch=int(1e6),
         )
 
     trainer.fit(imputer, dm)
