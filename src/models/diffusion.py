@@ -63,7 +63,7 @@ class DiffusionImputer(Imputer):
     def log_loss(self, name, loss, **kwargs):
         self.log(name + '_loss',
                  loss.detach(),
-                 on_step=False,
+                 on_step=True,
                  on_epoch=True,
                  logger=True,
                  prog_bar=True,
@@ -140,7 +140,7 @@ class DiffusionImputer(Imputer):
 
         # Update metrics
         self.train_metrics.update(noise, noise_pred, mask_ta)
-        self.log_metrics(self.val_metrics, batch_size=batch.batch_size)
+        self.log_metrics(self.train_metrics, batch_size=batch.batch_size)
         self.log_loss('train', loss, batch_size=batch.batch_size)
         return loss
 
