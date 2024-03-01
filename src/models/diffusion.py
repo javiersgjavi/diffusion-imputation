@@ -63,7 +63,7 @@ class DiffusionImputer(Imputer):
     def log_loss(self, name, loss, **kwargs):
         self.log(name + '_loss',
                  loss.detach(),
-                 on_step=False,
+                 on_step=True,
                  on_epoch=True,
                  logger=True,
                  prog_bar=True,
