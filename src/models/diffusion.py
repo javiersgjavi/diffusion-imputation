@@ -76,6 +76,23 @@ class DiffusionImputer(Imputer):
         return [optim], [scheduler]
 
 
+    def calculate_loss(self, noise, noise_pred, noise_f_pred, noise_b_pred, eval_mask):
+        loss_p = self.loss_fn(noise, noise_pred, eval_mask)
+        custom_loss = False
+        
+        if custom_loss:
+            loss_f_0 = self.loss_fn(noise, noise_f_pred[0], eval_mask)
+            loss_f_1 = self.loss_fn(noise, noise_f_pred[1], eval_mask)
+
+            loss_b_0 = self.loss_fn(noise, noise_b_pred[0], eval_mask)
+            loss_b_1 = self.loss_fn(noise, noise_b_pred[1], eval_mask)
+
+            loss = loss_p + loss_f_0 + loss_f_1 + loss_b_0 + loss_b_1
+            loss = torch.mean(loss)
+        else:
+            loss = loss_p
+        return loss, loss_p
+    
     def obtain_data_masked(self, x_co_0, x_real_0, mask_co, u, t):
         # Esto se supone que es la Figura 5 del paper de CSDI
         zero = torch.zeros_like(x_co_0)
@@ -113,7 +130,7 @@ class DiffusionImputer(Imputer):
         pbar = tqdm(steps_chain, desc=f'[INFO] Imputing batch...')
         for i in reversed(steps_chain):
             t = (torch.ones(x_ta_t.shape[0]) * i)
-            noise_pred = self.model(x_ta_t, t, cond_info, edge_index, edge_weight)
+            noise_pred = self.model(x_ta_t, t, cond_info, edge_index, edge_weight)[0]
             x_ta_t = self.scheduler.backwards(x_ta_t, noise_pred, t)
             pbar.update(1)
 
@@ -134,14 +151,15 @@ class DiffusionImputer(Imputer):
         t = self.t_sampler.get(x_co_0.shape[0]).to(x_co_0.device)
         x_ta_t, cond_info, noise = self.obtain_data_masked(x_co_0, x_real_0, mask_co, u, t)
 
-        noise_pred = self.model(x_ta_t, t, cond_info, edge_index, edge_weight)
+        noise_pred, noise_f_pred, noise_b_pred = self.model(x_ta_t, t, cond_info, edge_index, edge_weight)
 
-        loss = self.loss_fn(noise, noise_pred, mask_ta)
+        loss, loss_p = self.calculate_loss(noise, noise_pred, noise_f_pred, noise_b_pred, mask_ta)
 
         # Update metrics
         self.train_metrics.update(noise, noise_pred, mask_ta)
-        self.log_metrics(self.val_metrics, batch_size=batch.batch_size)
+        self.log_metrics(self.train_metrics, batch_size=batch.batch_size)
         self.log_loss('train', loss, batch_size=batch.batch_size)
+        self.log_loss('train_p', loss_p, batch_size=batch.batch_size)
         return loss
 
     def validation_step(self, batch, batch_idx):

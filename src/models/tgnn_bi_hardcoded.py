@@ -82,12 +82,12 @@ class UniModel(nn.Module):
         cond_embedding = self.cond_encoder(t, cond_info)
 
         #x += cond_embedding
-        h = self.encoder(x, u=cond_embedding) if self.name != 'stcn' else self.encoder(x, edges, weights)
+        h_e = self.encoder(x, u=cond_embedding) if self.name != 'stcn' else self.encoder(x, edges, weights)
 
         #x += cond_embedding
-        h = torch.cat([h, x, cond_embedding], dim=-1)
-        h = self.decoder(h, edges, weights)
-        return h
+        h_d = torch.cat([h_e, x, cond_embedding], dim=-1)
+        h_d = self.decoder(h_d, edges, weights)
+        return h_d, h_e
 
 class BiModel(nn.Module):
 
@@ -114,7 +114,7 @@ class BiModel(nn.Module):
                 'dropout': 0.1,
             },
             'mlp':{
-                'input_size': 3,
+                'input_size': 5,
                 'exog_size': 256,
                 'output_size': 1,
                 'hidden_size': 64,
@@ -134,16 +134,22 @@ class BiModel(nn.Module):
         t = t.unsqueeze(-1).type(torch.float)
 
         
-        f_representation = self.model_f(x, t, cond_info, edges, weights)
-        b_representation = self.model_b(torch.flip(x, dims=[1]), t, torch.flip(cond_info, dims=[1]), edges, weights)
+        h_d_f, h_e_f = self.model_f(x, t, cond_info, edges, weights)
+        h_d_b, h_e_b = self.model_b(torch.flip(x, dims=[1]), t, torch.flip(cond_info, dims=[1]), edges, weights)
+
+        h_d_b = torch.flip(h_d_b, dims=[1])
+        h_e_b = torch.flip(h_e_b, dims=[1])
 
         cond_info = self.cond_emb(t, cond_info)
 
+        # meto las otras representaciones como la unet?
         h = torch.cat([
-            f_representation,# + cond_info,
-            b_representation,# + cond_info
+            h_d_f,# + cond_info,
+            h_e_f,
+            h_d_b,
+            h_e_b,
             x
             ], dim=-1)
         
-        return self.decoder_mlp(h, u=cond_info)
+        return self.decoder_mlp(h, u=cond_info), (h_d_f, h_e_f), (h_d_b, h_e_b)
     
