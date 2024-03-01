@@ -52,22 +52,74 @@ class DiffusionImputer(Imputer):
         self.model = BiModel()#UNet
         self.scheduler = Scheduler(beta_schedule=scheduler_type)
 
+    def log_metrics(self, metrics, **kwargs):
+        self.log_dict(metrics,
+                      on_step=False,
+                      on_epoch=True,
+                      logger=True,
+                      prog_bar=False,
+                      **kwargs)
+
+    def log_loss(self, name, loss, **kwargs):
+        self.log(name + '_loss',
+                 loss.detach(),
+                 on_step=False,
+                 on_epoch=True,
+                 logger=True,
+                 prog_bar=True,
+                 **kwargs)
+        
+
     def configure_optimizers(self):
         optim = torch.optim.AdamW(self.model.parameters(), lr=1e-3, weight_decay=0.1)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, T_max=1000)
         return [optim], [scheduler]
 
 
-    def obtain_data_masked(self, x_co_0, x_real_0, mask_co, t):
+    def obtain_data_masked(self, x_co_0, x_real_0, mask_co, u, t):
         # Esto se supone que es la Figura 5 del paper de CSDI
         zero = torch.zeros_like(x_co_0)
 
         x_noisy_t, noise = self.scheduler.forward(x_real_0, t) # esto puede ser un punto de fallo
         x_ta_t = torch.where(mask_co.bool(), zero, x_noisy_t)
 
-        cond_info = torch.cat([x_co_0, mask_co], dim=-1)
+        u = u.view(u.shape[0], u.shape[1], 1, u.shape[2]).repeat(1, 1, x_co_0.shape[2], 1)
+        cond_info = torch.cat([x_co_0, mask_co, u], dim=-1)
+
         return x_ta_t, cond_info, noise
 
+        
+    def get_imputation(self, batch):
+        
+        # más o menos, pero va a haber que actualizarlo (Se podría pasar a veces None como condicional y ver si funciona como CFG)
+        x_co_0 = batch.x
+        # x_real_0 = batch.transform['y'](batch.y)
+        u = batch.u
+        edge_index = batch.edge_index
+        edge_weight = batch.edge_weight
+        mask_co = batch.mask
+        # mask_ta = batch.eval_mask
+        transform = batch.transform
+
+        zero = torch.zeros_like(x_co_0)
+        noise = torch.randn_like(x_co_0)
+
+        x_ta_t = torch.where(mask_co.bool(), zero, noise)
+
+        u = u.view(u.shape[0], u.shape[1], 1, u.shape[2]).repeat(1, 1, x_co_0.shape[2], 1)
+        cond_info = torch.cat([x_co_0, mask_co, u], dim=-1)
+
+        steps_chain = range(1, self.num_T)
+        pbar = tqdm(steps_chain, desc=f'[INFO] Imputing batch...')
+        for i in reversed(steps_chain):
+            t = (torch.ones(x_ta_t.shape[0]) * i)
+            noise_pred = self.model(x_ta_t, t, cond_info, edge_index, edge_weight)
+            x_ta_t = self.scheduler.backwards(x_ta_t, noise_pred, t)
+            pbar.update(1)
+
+        x_0 = transform['x'].inverse_transform(x_ta_t)
+        return x_0
+    
     def training_step(self, batch, batch_id):
         # más o menos, pero va a haber que actualizarlo (Se podría pasar a veces None como condicional y ver si funciona como CFG)
         x_co_0 = batch.x
@@ -80,7 +132,7 @@ class DiffusionImputer(Imputer):
 
 
         t = self.t_sampler.get(x_co_0.shape[0]).to(x_co_0.device)
-        x_ta_t, cond_info, noise = self.obtain_data_masked(x_co_0, x_real_0, mask_co, t)
+        x_ta_t, cond_info, noise = self.obtain_data_masked(x_co_0, x_real_0, mask_co, u, t)
 
         noise_pred = self.model(x_ta_t, t, cond_info, edge_index, edge_weight)
 
@@ -88,8 +140,8 @@ class DiffusionImputer(Imputer):
 
         # Update metrics
         self.train_metrics.update(noise, noise_pred, mask_ta)
-        self.log_dict(self.train_metrics, batch_size=batch.batch_size, prog_bar=False, logger=True, on_epoch=True, on_step=False)
-        self.log('train_loss', loss, batch_size=batch.batch_size, prog_bar=True, logger=True, on_epoch=True, on_step=False)
+        self.log_metrics(self.val_metrics, batch_size=batch.batch_size)
+        self.log_loss('train', loss, batch_size=batch.batch_size)
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -97,50 +149,22 @@ class DiffusionImputer(Imputer):
         target = batch.y
         eval_mask = batch.eval_mask
     
-        val_loss = self.loss_fn(x_t, target, eval_mask)
+        loss = self.loss_fn(x_t, target, eval_mask)
 
+        # Update metrics
         self.val_metrics.update(x_t, target, eval_mask)
-        self.log_dict(self.val_metrics, batch_size=batch.batch_size, prog_bar=False, logger=True, on_epoch=True, on_step=False)
-        self.log('val_loss', val_loss, batch_size=batch.batch_size, prog_bar=True, logger=True, on_epoch=True, on_step=False)
-        #self.log_loss('val', val_loss, batch_size=batch.batch_size)
-        #self.log('val_loss', mae, prog_bar=True, on_epoch=True)
+        self.log_metrics(self.val_metrics, batch_size=batch.batch_size)
+        self.log_loss('val', loss, batch_size=batch.batch_size)
 
     def test_step(self, batch, batch_idx):
         x_t = self.get_imputation(batch)
         target = batch.y
         eval_mask = batch.eval_mask
     
-        val_loss = self.loss_fn(x_t, target, eval_mask)
+        loss = self.loss_fn(x_t, target, eval_mask)
 
-        self.val_metrics.update(x_t, target, eval_mask)
-        self.log_metrics(self.val_metrics, batch_size=batch.batch_size)
-        self.log_loss('test', val_loss, batch_size=batch.batch_size)
+        # Update metrics
+        self.test_metrics.update(x_t, target, eval_mask)
+        self.log_metrics(self.test_metrics, batch_size=batch.batch_size)
+        self.log_loss('test', loss, batch_size=batch.batch_size)
     
-    def get_imputation(self, batch):
-        
-        # más o menos, pero va a haber que actualizarlo (Se podría pasar a veces None como condicional y ver si funciona como CFG)
-        x_co_0 = batch.x
-        x_real_0 = batch.transform['y'](batch.y)
-        u = batch.u
-        edge_index = batch.edge_index
-        edge_weight = batch.edge_weight
-        mask_co = batch.mask
-        mask_ta = batch.eval_mask
-        transform = batch.transform
-
-        zero = torch.zeros_like(x_co_0)
-        noise = torch.randn_like(x_co_0)
-
-        x_ta_t = torch.where(mask_co.bool(), zero, noise)
-        cond_info = torch.cat([x_co_0, mask_co], dim=-1)
-
-        steps_chain = range(1, self.num_T)
-        pbar = tqdm(steps_chain, desc=f'[INFO] Imputing batch...')
-        for i in reversed(steps_chain):
-            t = (torch.ones(x_ta_t.shape[0]) * i)
-            noise_pred = self.model(x_ta_t, t, cond_info, edge_index, edge_weight)
-            x_ta_t = self.scheduler.backwards(x_ta_t, noise_pred, t)
-            pbar.update(1)
-
-        x_0 = transform['x'].inverse_transform(x_ta_t)
-        return x_0

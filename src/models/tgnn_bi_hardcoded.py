@@ -32,7 +32,7 @@ class ConditionalEncoder(nn.Module):
         hyperparameters = {
             'encoder_name': 'tcn',
             'encoder': {
-                'input_channels': 2,
+                'input_channels': 4,
                 'hidden_channels': 64,
                 'output_channels': 256,
                 'kernel_size': 3,
