@@ -46,12 +46,13 @@ def main():
     ]
 
     trainer = Trainer(
-        max_epochs=1000,
+        max_epochs=200,
         default_root_dir='./logs',
         logger=logger,
         accelerator='gpu',
-        devices=[2],
+        devices=[0],
         #callbacks=callbaks,
+        check_val_every_n_epoch=1e6,
         )
 
     trainer.fit(imputer, dm)
