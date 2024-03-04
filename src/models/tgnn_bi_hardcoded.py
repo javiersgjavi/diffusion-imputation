@@ -2,7 +2,7 @@ import torch
 from torch import nn
 
 from tsl.nn.blocks.decoders import GCNDecoder
-from tsl.nn.blocks.encoders.conditional import ConditionalBlock
+from tsl.nn.blocks.encoders.conditional import ConditionalBlock, ConditionalTCNBlock
 from tsl.nn.blocks.encoders import MLP
 
 from src.utils import init_weights_xavier, clean_hyperparams, get_encoder, define_mlp_decoder
@@ -37,7 +37,7 @@ class ConditionalEncoder(nn.Module):
                 'output_channels': 256,
                 'kernel_size': 3,
                 'dropout': 0.1,
-                'n_layers': 4,
+                'n_layers': 2,
                 'dilation': 1,
                 'exog_channels':256
             }
@@ -57,7 +57,6 @@ class ConditionalEncoder(nn.Module):
         if self.use_cond_info:
             self.cond_block = get_encoder(hyperparameters['encoder_name'])(**hyperparameters['encoder']).apply(init_weights_xavier)
 
-            
     def forward(self, t, cond_info):
         device = next(self.t_resampler.parameters()).device # Esto hay que revisarlo, lo he puesto para mover t a gpu
         t_emb = self.pos_encoding(t).to(device).view(t.shape[0], 1, 1, 256).repeat((1, self.time_shape, self.node_shape, 1)) # Resample t to (B, T, N, F)
@@ -82,7 +81,8 @@ class UniModel(nn.Module):
         cond_embedding = self.cond_encoder(t, cond_info)
 
         #x += cond_embedding
-        h_e = self.encoder(x, u=cond_embedding) if self.name != 'stcn' else self.encoder(x, edges, weights)
+        #h_e = self.encoder(x, u=cond_embedding) if self.name != 'stcn' else self.encoder(x, edges, weights)
+        h_e = self.encoder(torch.cat([x, cond_embedding, cond_info], dim=-1))
 
         #x += cond_embedding
         h_d = torch.cat([h_e, x, cond_embedding], dim=-1)
@@ -96,14 +96,14 @@ class BiModel(nn.Module):
         args={
             'encoder_name': 'transformer', #'rnn',
             'encoder':{
-                'input_size': 1,
+                'input_size': 261,
                 'hidden_size': 64,
                 'output_size': 1,
-                'exog_size': 0,
+                'ff_size':64,
                 'n_layers':3,
                 'dropout':0.1,
-                'cell':'gru',
-                'exog_size': 256,
+                #'cell':'gru',
+                # 'exog_size': 256,
             },
             'decoder':{
                 'input_size': 2 + 256,

@@ -31,17 +31,18 @@ def main():
     )
 
     callbaks = [
-        EarlyStopping(
-            monitor='val_loss',
-            patience=200,
-            verbose=True,
-            mode='min'
-        ),
+        #EarlyStopping(
+        #    monitor='val_loss',
+        #    patience=200,
+        #    verbose=True,
+        #    mode='min'
+        #),
         ModelCheckpoint(
-            monitor='val_loss',
-            filename='base_experiment',
+            monitor='val_loss_epoch',
+            filename='{epoch}-{val_loss:.5f}',
             save_top_k=1,
-            mode='min'
+            mode='min',
+            verbose=True,
         )
     ]
 
@@ -50,13 +51,13 @@ def main():
         default_root_dir='./logs',
         logger=logger,
         accelerator='gpu',
-        devices=[2],
-        #callbacks=callbaks,
+        devices=[0],
+        callbacks=callbaks,
         )
 
     trainer.fit(imputer, dm)
-
-    trainer.test(imputer, datamodule=dm)
+    
+    trainer.test(imputer, datamodule=dm, ckpt_path=trainer.checkpoint_callback.best_model_path)
 
 if __name__=='__main__':
     main()
