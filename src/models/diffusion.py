@@ -156,13 +156,13 @@ class DiffusionImputer(Imputer):
         loss, loss_p = self.calculate_loss(noise, noise_pred, noise_f_pred, noise_b_pred, mask_ta)
 
         # Update metrics
-        self.train_metrics.update(noise, noise_pred, mask_ta)
-        self.log_metrics(self.train_metrics, batch_size=batch.batch_size)
+        #self.train_metrics.update(noise, noise_pred, mask_ta) En verdad si estoy mirando el ruido no me interesa tanto saber el mae ni nada de eso
+        #self.log_metrics(self.train_metrics, batch_size=batch.batch_size)
         self.log_loss('train', loss, batch_size=batch.batch_size)
         self.log_loss('train_p', loss_p, batch_size=batch.batch_size)
         return loss
 
-    def validation_step(self, batch, batch_idx):
+    '''def validation_step(self, batch, batch_idx):
         x_t = self.get_imputation(batch)
         target = batch.y
         eval_mask = batch.eval_mask
@@ -172,17 +172,35 @@ class DiffusionImputer(Imputer):
         # Update metrics
         self.val_metrics.update(x_t, target, eval_mask)
         self.log_metrics(self.val_metrics, batch_size=batch.batch_size)
+        self.log_loss('val', loss, batch_size=batch.batch_size)'''
+    
+    def validation_step(self, batch, batch_idx):
+        x_co_0 = batch.x
+        x_real_0 = batch.transform['y'](batch.y)
+        u = batch.u
+        edge_index = batch.edge_index
+        edge_weight = batch.edge_weight
+        mask_co = batch.mask
+        mask_ta = batch.eval_mask
+
+
+        t = self.t_sampler.get(x_co_0.shape[0]).to(x_co_0.device)
+        x_ta_t, cond_info, noise = self.obtain_data_masked(x_co_0, x_real_0, mask_co, u, t)
+
+        noise_pred, noise_f_pred, noise_b_pred = self.model(x_ta_t, t, cond_info, edge_index, edge_weight)
+
+        loss, loss_p = self.calculate_loss(noise, noise_pred, noise_f_pred, noise_b_pred, mask_ta)
+
+        # Update metrics
+        #self.val_metrics.update(noise, noise_pred, mask_ta)
+        #self.log_metrics(self.val_metrics, batch_size=batch.batch_size)
         self.log_loss('val', loss, batch_size=batch.batch_size)
 
     def test_step(self, batch, batch_idx):
         x_t = self.get_imputation(batch)
         target = batch.y
         eval_mask = batch.eval_mask
-    
-        loss = self.loss_fn(x_t, target, eval_mask)
 
         # Update metrics
         self.test_metrics.update(x_t, target, eval_mask)
         self.log_metrics(self.test_metrics, batch_size=batch.batch_size)
-        self.log_loss('test', loss, batch_size=batch.batch_size)
-    

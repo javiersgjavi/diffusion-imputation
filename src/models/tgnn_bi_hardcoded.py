@@ -94,7 +94,7 @@ class BiModel(nn.Module):
     def __init__(self, args=None):
         super().__init__()
         args={
-            'encoder_name': 'rnn',
+            'encoder_name': 'transformer', #'rnn',
             'encoder':{
                 'input_size': 1,
                 'hidden_size': 64,
