@@ -153,5 +153,5 @@ class BiModel(nn.Module):
             x
             ], dim=-1)
         
-        return self.decoder_mlp(h, u=cond_info), (h_d_f, h_e_f), (h_d_b, h_e_b)
+        return self.decoder_mlp(h, u=cond_info)
     
