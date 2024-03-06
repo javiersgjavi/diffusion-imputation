@@ -56,14 +56,16 @@ class DiffusionImputer(Imputer):
         )
 
     def obtain_data_masked(self, x_co_0, mask_co, u, t=None, x_real_0=None):
-        # Esto se supone que es la Figura 5 del paper de CSDI
+
+        zeros = torch.zeros_like(x_co_0)
 
         if x_real_0 is None:
             noise = torch.randn_like(x_co_0)
             x_noisy_t = noise
         else:
             x_noisy_t, noise = self.scheduler.forward(x_real_0, t) # esto puede ser un punto de fallo
-        x_ta_t = (1 - mask_co) * x_noisy_t
+
+        x_ta_t = torch.where(mask_co.bool(), zeros, x_noisy_t)
     
         u = u.view(u.shape[0], u.shape[1], 1, u.shape[2]).repeat(1, 1, x_co_0.shape[2], 1)
         cond_info = torch.cat([x_co_0, mask_co, u], dim=-1)
@@ -81,7 +83,7 @@ class DiffusionImputer(Imputer):
         mask_co = batch.mask
         # mask_ta = batch.eval_mask
         transform = batch.transform
-        zero = torch.zeros_like(x_co_0)
+        zeros = torch.zeros_like(x_co_0)
 
         x_ta_t, cond_info, _ = self.obtain_data_masked(x_co_0, mask_co, u)
         
@@ -93,7 +95,7 @@ class DiffusionImputer(Imputer):
             t = (torch.ones(x_ta_t.shape[0]) * i)
             noise_pred = self.model(x_ta_t, x_co_0, t, cond_info, edge_index, edge_weight)
             x_ta_t = self.scheduler.backwards(x_ta_t, noise_pred, t)
-            x_ta_t = (1-mask_co)*x_ta_t
+            x_ta_t = torch.where(mask_co.bool(), zeros, x_ta_t)
             pbar.update(1)
 
             noise_predictions.append(noise_pred)
@@ -130,10 +132,7 @@ class DiffusionImputer(Imputer):
 
     def test_step(self, batch, batch_idx):
         x_t = self.get_imputation(batch)[0]
-
-        print(self.masked_mae(x_t, batch.y, batch.eval_mask))
         self.test_metrics.update(x_t, batch.y, batch.eval_mask)
-
         self.log_metrics(self.test_metrics, batch_size=batch.batch_size)
 
     def configure_optimizers(self):
