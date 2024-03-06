@@ -46,11 +46,14 @@ class DiffusionImputer(Imputer):
             'mre': torch_metrics.MaskedMRE()
         }
         super().__init__(*args, **kwargs)
-        self.num_T = 1000
+        self.num_T = 50
         self.t_sampler = RandomStack(1, self.num_T, device=self.device)
         self.loss_fn = torch_metrics.MaskedMSE()
         self.model = BiModel()#UNet
-        self.scheduler = Scheduler(beta_schedule=scheduler_type)
+        self.scheduler = Scheduler(
+            num_train_timesteps=self.num_T,
+            beta_schedule=scheduler_type
+        )
 
     def log_metrics(self, metrics, **kwargs):
         self.log_dict(metrics,
