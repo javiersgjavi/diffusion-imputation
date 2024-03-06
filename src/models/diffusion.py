@@ -50,7 +50,10 @@ class DiffusionImputer(Imputer):
         self.t_sampler = RandomStack(1, self.num_T, device=self.device)
         self.loss_fn = torch_metrics.MaskedMSE()
         self.model = BiModel()#UNet
-        self.scheduler = Scheduler(beta_schedule=scheduler_type)
+        self.scheduler = Scheduler(
+            beta_schedule=scheduler_type,
+            num_train_timesteps=self.num_T
+            )
 
     def log_metrics(self, metrics, **kwargs):
         self.log_dict(metrics,
@@ -126,7 +129,7 @@ class DiffusionImputer(Imputer):
         u = u.view(u.shape[0], u.shape[1], 1, u.shape[2]).repeat(1, 1, x_co_0.shape[2], 1)
         cond_info = torch.cat([x_co_0, mask_co, u], dim=-1)
 
-        steps_chain = range(1, self.num_T)
+        steps_chain = range(0, self.num_T)
         pbar = tqdm(steps_chain, desc=f'[INFO] Imputing batch...')
         for i in reversed(steps_chain):
             t = (torch.ones(x_ta_t.shape[0]) * i)
