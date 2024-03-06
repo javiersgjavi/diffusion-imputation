@@ -133,12 +133,12 @@ class DiffusionImputer(Imputer):
         pbar = tqdm(steps_chain, desc=f'[INFO] Imputing batch...')
         for i in reversed(steps_chain):
             t = (torch.ones(x_ta_t.shape[0]) * i)
-            noise_pred = self.model(x_ta_t, t, cond_info, edge_index, edge_weight)[0]
+            noise_pred = self.model(x_ta_t, x_co_0, t, cond_info, edge_index, edge_weight)[0]
             x_ta_t = self.scheduler.backwards(x_ta_t, noise_pred, t)
             pbar.update(1)
 
         x_0 = transform['x'].inverse_transform(x_ta_t)
-        return x_0
+        return x_0, x_ta_t
     
     def training_step(self, batch, batch_id):
         # más o menos, pero va a haber que actualizarlo (Se podría pasar a veces None como condicional y ver si funciona como CFG)
@@ -154,7 +154,7 @@ class DiffusionImputer(Imputer):
         t = self.t_sampler.get(x_co_0.shape[0]).to(x_co_0.device)
         x_ta_t, cond_info, noise = self.obtain_data_masked(x_co_0, x_real_0, mask_co, u, t)
 
-        noise_pred, noise_f_pred, noise_b_pred = self.model(x_ta_t, t, cond_info, edge_index, edge_weight)
+        noise_pred, noise_f_pred, noise_b_pred = self.model(x_ta_t, x_co_0, t, cond_info, edge_index, edge_weight)
 
         loss, loss_p = self.calculate_loss(noise, noise_pred, noise_f_pred, noise_b_pred, mask_ta)
 
@@ -190,7 +190,7 @@ class DiffusionImputer(Imputer):
         t = self.t_sampler.get(x_co_0.shape[0]).to(x_co_0.device)
         x_ta_t, cond_info, noise = self.obtain_data_masked(x_co_0, x_real_0, mask_co, u, t)
 
-        noise_pred, noise_f_pred, noise_b_pred = self.model(x_ta_t, t, cond_info, edge_index, edge_weight)
+        noise_pred, noise_f_pred, noise_b_pred = self.model(x_ta_t, x_co_0, t, cond_info, edge_index, edge_weight)
 
         loss, loss_p = self.calculate_loss(noise, noise_pred, noise_f_pred, noise_b_pred, mask_ta)
 
