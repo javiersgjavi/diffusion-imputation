@@ -96,7 +96,7 @@ class BiModel(nn.Module):
         args={
             'encoder_name': 'transformer', #'rnn',
             'encoder':{
-                'input_size': 261,
+                'input_size': 262,
                 'hidden_size': 64,
                 'output_size': 1,
                 'ff_size':64,
@@ -106,7 +106,7 @@ class BiModel(nn.Module):
                 # 'exog_size': 256,
             },
             'decoder':{
-                'input_size': 2 + 256,
+                'input_size': 3 + 256,
                 'hidden_size': 64,
                 'output_size': 1,
                 'horizon': 24,
@@ -114,7 +114,7 @@ class BiModel(nn.Module):
                 'dropout': 0.1,
             },
             'mlp':{
-                'input_size': 5,
+                'input_size': 6,
                 'exog_size': 256,
                 'output_size': 1,
                 'hidden_size': 64,
@@ -129,7 +129,9 @@ class BiModel(nn.Module):
 
         self.decoder_mlp = MLP(**args['mlp']).apply(init_weights_xavier)
    
-    def forward(self, x, t, cond_info, edges, weights):
+    def forward(self, x, x_co, t, cond_info, edges, weights):
+
+        x = torch.cat([x, x_co], dim=-1)
 
         t = t.unsqueeze(-1).type(torch.float)
 
