@@ -129,7 +129,7 @@ class DiffusionImputer(Imputer):
         u = u.view(u.shape[0], u.shape[1], 1, u.shape[2]).repeat(1, 1, x_co_0.shape[2], 1)
         cond_info = torch.cat([x_co_0, mask_co, u], dim=-1)
 
-        steps_chain = range(1, self.num_T)
+        steps_chain = range(0, self.num_T)
         pbar = tqdm(steps_chain, desc=f'[INFO] Imputing batch...')
         for i in reversed(steps_chain):
             t = (torch.ones(x_ta_t.shape[0]) * i)
