@@ -47,7 +47,7 @@ class DiffusionImputer(Imputer):
         }
         super().__init__(*args, **kwargs)
         self.num_T = 50
-        self.t_sampler = RandomStack(1, self.num_T, device=self.device)
+        self.t_sampler = RandomStack(0, self.num_T, device=self.device)
         self.loss_fn = torch_metrics.MaskedMSE()
         self.model = BiModel()#UNet
         self.scheduler = Scheduler(
@@ -159,23 +159,8 @@ class DiffusionImputer(Imputer):
         loss, loss_p = self.calculate_loss(noise, noise_pred, noise_f_pred, noise_b_pred, mask_ta)
 
         # Update metrics
-        #self.train_metrics.update(noise, noise_pred, mask_ta) En verdad si estoy mirando el ruido no me interesa tanto saber el mae ni nada de eso
-        #self.log_metrics(self.train_metrics, batch_size=batch.batch_size)
         self.log_loss('train', loss, batch_size=batch.batch_size)
-        self.log_loss('train_p', loss_p, batch_size=batch.batch_size)
         return loss
-
-    '''def validation_step(self, batch, batch_idx):
-        x_t = self.get_imputation(batch)
-        target = batch.y
-        eval_mask = batch.eval_mask
-    
-        loss = self.loss_fn(x_t, target, eval_mask)
-
-        # Update metrics
-        self.val_metrics.update(x_t, target, eval_mask)
-        self.log_metrics(self.val_metrics, batch_size=batch.batch_size)
-        self.log_loss('val', loss, batch_size=batch.batch_size)'''
     
     def validation_step(self, batch, batch_idx):
         x_co_0 = batch.x
@@ -195,8 +180,6 @@ class DiffusionImputer(Imputer):
         loss, loss_p = self.calculate_loss(noise, noise_pred, noise_f_pred, noise_b_pred, mask_ta)
 
         # Update metrics
-        #self.val_metrics.update(noise, noise_pred, mask_ta)
-        #self.log_metrics(self.val_metrics, batch_size=batch.batch_size)
         self.log_loss('val', loss, batch_size=batch.batch_size)
 
     def test_step(self, batch, batch_idx):
