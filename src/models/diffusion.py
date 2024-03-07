@@ -123,18 +123,22 @@ class DiffusionImputer(Imputer):
         return [optim], [scheduler]
     
     def log_metrics(self, metrics, **kwargs):
-        self.log_dict(metrics,
-                      on_step=True,
-                      on_epoch=True,
-                      logger=True,
-                      prog_bar=False,
-                      **kwargs)
+        self.log_dict(
+            metrics,
+            on_step=True,
+            on_epoch=True,
+            logger=True,
+            prog_bar=False,
+            **kwargs
+        )
 
     def log_loss(self, name, loss, **kwargs):
-        self.log(name + '_loss',
-                 loss.detach(),
-                 on_step=True,
-                 on_epoch=True,
-                 logger=True,
-                 prog_bar=True,
-                 **kwargs)
+        self.log(
+            name + '_loss',
+            loss.detach(),
+            on_step=True,
+            on_epoch=True,
+            logger=True,
+            prog_bar=True,
+            **kwargs
+        )
