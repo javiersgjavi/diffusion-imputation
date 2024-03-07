@@ -19,7 +19,6 @@ class TEncoder(nn.Module):
         )
 
     def forward(self, t):
-        
         pos_enc_a = torch.sin(t.repeat(1, self.channels // 2) * self.inv_freq.to(t.device))
         pos_enc_b = torch.cos(t.repeat(1, self.channels // 2) * self.inv_freq.to(t.device))
         pos_enc = torch.cat([pos_enc_a, pos_enc_b], dim=-1)
