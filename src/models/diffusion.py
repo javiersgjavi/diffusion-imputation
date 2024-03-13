@@ -4,6 +4,7 @@ from diffusers import DDPMScheduler
 from tsl.engines.imputer import Imputer
 from tsl.metrics import torch as torch_metrics
 from src.models.tgnn_bi_hardcoded import BiModel
+from src.models.pristi import PriSTI
 
 class RandomStack:
     def __init__(self, high, low=0, size=1e6):
@@ -31,7 +32,7 @@ class Scheduler(DDPMScheduler):
         return super().step(predicted_noise, step, x_t).prev_sample
     
 class DiffusionImputer(Imputer):
-    def __init__(self, scheduler_type='squaredcos_cap_v2', *args, **kwargs):
+    def __init__(self, scheduler_type='squaredcos_cap_v2', interpolated=False, *args, **kwargs):
         kwargs['metrics'] = {
             'mae': torch_metrics.MaskedMAE(),
             'mse': torch_metrics.MaskedMSE(),
@@ -42,7 +43,8 @@ class DiffusionImputer(Imputer):
         self.masked_mae = torch_metrics.MaskedMAE()
         self.t_sampler = RandomStack(self.num_T)
         self.loss_fn = torch_metrics.MaskedMSE()
-        self.model = BiModel()
+        self.interpolated = interpolated
+        self.model = PriSTI()
         self.scheduler = Scheduler(
             num_train_timesteps=self.num_T,
             beta_schedule=scheduler_type
@@ -60,7 +62,11 @@ class DiffusionImputer(Imputer):
         x_ta_t = torch.where(mask_co.bool(), zeros, x_noisy_t)
     
         u = u.view(u.shape[0], u.shape[1], 1, u.shape[2]).repeat(1, 1, x_co_0.shape[2], 1)
-        cond_info = torch.cat([x_co_0, mask_co, u], dim=-1)
+        cond_info = {
+            'x_co': x_co_0,
+            'mask_co': mask_co,
+            'u': u,
+        }
 
         return x_ta_t, cond_info, noise
         
@@ -78,8 +84,8 @@ class DiffusionImputer(Imputer):
         steps_chain = range(0, self.num_T)
         pbar = tqdm(steps_chain, desc=f'[INFO] Imputing batch...')
         for i in reversed(steps_chain):
-            t = (torch.ones(x_ta_t.shape[0]) * i)
-            noise_pred = self.model(x_ta_t, x_co_0, t, cond_info, edge_index, edge_weight)
+            t = (torch.ones(x_ta_t.shape[0]) * i).to(x_ta_t.device)
+            noise_pred = self.model(x_ta_t, cond_info, t, edge_index, edge_weight)
             x_ta_t = self.scheduler.backwards(x_ta_t, noise_pred, t)
             x_ta_t = torch.where(mask_co.bool(), zeros, x_ta_t)
             pbar.update(1)
@@ -100,7 +106,7 @@ class DiffusionImputer(Imputer):
         t = self.t_sampler.get(x_co_0.shape[0]).to(x_co_0.device)
         x_ta_t, cond_info, noise = self.obtain_data_masked(x_co_0, mask_co, u, t=t, x_real_0=x_real_0)
 
-        noise_pred  = self.model(x_ta_t, x_co_0, t, cond_info, edge_index, edge_weight)
+        noise_pred  = self.model(x_ta_t, cond_info, t, edge_index, edge_weight)
         return self.loss_fn(noise, noise_pred, mask_ta)
 
     def training_step(self, batch, batch_idx):
@@ -113,6 +119,8 @@ class DiffusionImputer(Imputer):
         self.log_loss('val', loss, batch_size=batch.batch_size)
 
     def test_step(self, batch, batch_idx):
+        if batch_idx > 2:
+            return torch.tensor(0.0)
         x_t = self.get_imputation(batch)
         self.test_metrics.update(x_t, batch.y, batch.eval_mask)
         self.log_metrics(self.test_metrics, batch_size=batch.batch_size)

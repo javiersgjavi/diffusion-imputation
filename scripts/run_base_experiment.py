@@ -54,12 +54,12 @@ def main():
         logger=logger,
         accelerator='gpu',
         devices=[0],
-        callbacks=callbaks,
+        #callbacks=callbaks,
         )
 
     trainer.fit(imputer, dm)
     
-    trainer.test(imputer, datamodule=dm, ckpt_path=trainer.checkpoint_callback.best_model_path)
+    trainer.test(imputer, datamodule=dm)#, ckpt_path=trainer.checkpoint_callback.best_model_path)
 
 if __name__=='__main__':
     main()
