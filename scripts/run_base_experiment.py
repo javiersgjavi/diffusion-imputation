@@ -12,7 +12,8 @@ from pytorch_lightning import Trainer
 
 def main():
     
-    dm = MetrLADataset().get_dm()
+    interpolated = True
+    dm = MetrLADataset(interpolate=interpolated).get_dm()
 
     imputer = DiffusionImputer(
         model_kwargs=None,
@@ -24,6 +25,7 @@ def main():
         warm_up_steps=1,
         scheduler_class=None,
         scheduler_kwargs=None,
+        interpolated=interpolated
     )
 
     logger = TensorBoardLogger(

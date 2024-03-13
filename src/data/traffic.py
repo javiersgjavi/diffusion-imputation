@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 from tsl.datasets import MetrLA, PemsBay
 from tsl.data import ImputationDataset
 from tsl.ops.imputation import add_missing_values
@@ -7,7 +8,7 @@ from tsl.data.preprocessing import StandardScaler, MinMaxScaler
 from tsl.data.datamodule import TemporalSplitter, SpatioTemporalDataModule
 
 class TrafficDataset:
-    def __init__(self, p_fault=None, p_noise=None, point=True):
+    def __init__(self, p_fault=None, p_noise=None, point=True, interpolate=False):
 
         if point:
             p_fault = 0. if p_fault is None else p_fault
@@ -34,13 +35,16 @@ class TrafficDataset:
             )
 
         covariates = {'u': dataset.datetime_encoded('day').values}
+        
+        dataframe = self.apply_linear_interpolation(dataset) if interpolate else dataset.dataframe()
+        transform = None if interpolate else MaskInput()
 
         torch_dataset = ImputationDataset(
-            target=dataset.dataframe(),
+            target=dataframe,
             mask = dataset.training_mask,
             eval_mask = dataset.eval_mask,
             covariates=covariates,
-            transform=MaskInput(),
+            transform=transform,
             connectivity=connectivity,
             window=24,
             stride=1
@@ -64,6 +68,13 @@ class TrafficDataset:
 
     def get_dm(self):
         return self.dm
+
+    def apply_linear_interpolation(self, dataset):
+        mask = dataset.mask.squeeze()
+        data = dataset.dataframe().values
+        data[~mask]=np.nan
+        data_linear_imputed=pd.DataFrame(data).interpolate(method='linear', axis=0).backfill(axis=0)
+        return data_linear_imputed
 
 class MetrLADataset(TrafficDataset):
     def __init__(self, **kwargs):
