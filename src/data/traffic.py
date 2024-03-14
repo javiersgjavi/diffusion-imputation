@@ -4,11 +4,13 @@ from tsl.datasets import MetrLA, PemsBay
 from tsl.data import ImputationDataset
 from tsl.ops.imputation import add_missing_values
 from tsl.transforms import MaskInput
-from tsl.data.preprocessing import StandardScaler, MinMaxScaler
+from tsl.data.preprocessing import  MinMaxScaler
 from tsl.data.datamodule import TemporalSplitter, SpatioTemporalDataModule
 
+from src.data.transformations import  ImputatedDataset, CustomTransform
+
 class TrafficDataset:
-    def __init__(self, p_fault=None, p_noise=None, point=True, interpolate=False):
+    def __init__(self, p_fault=None, p_noise=None, point=True):
 
         if point:
             p_fault = 0. if p_fault is None else p_fault
@@ -36,15 +38,14 @@ class TrafficDataset:
 
         covariates = {'u': dataset.datetime_encoded('day').values}
         
-        dataframe = self.apply_linear_interpolation(dataset) if interpolate else dataset.dataframe()
-        transform = None if interpolate else MaskInput()
-
-        torch_dataset = ImputationDataset(
-            target=dataframe,
+        data_interpolated = self.apply_linear_interpolation(dataset)
+        torch_dataset = ImputatedDataset(
+            target=dataset.dataframe(),
+            x_interpolated = data_interpolated,
             mask = dataset.training_mask,
             eval_mask = dataset.eval_mask,
             covariates=covariates,
-            transform=transform,
+            transform=CustomTransform(),
             connectivity=connectivity,
             window=24,
             stride=1
@@ -61,7 +62,7 @@ class TrafficDataset:
             dataset=torch_dataset,
             scalers=scalers,
             splitter=splitter,
-            batch_size=64,
+            batch_size=8,
             )
         
         #self.dm.setup()
@@ -70,10 +71,11 @@ class TrafficDataset:
         return self.dm
 
     def apply_linear_interpolation(self, dataset):
-        mask = dataset.mask.squeeze()
+        mask = dataset.training_mask.squeeze()
         data = dataset.dataframe().values
         data[~mask]=np.nan
-        data_linear_imputed=pd.DataFrame(data).interpolate(method='linear', axis=0).backfill(axis=0)
+        data_linear_imputed=pd.DataFrame(data).interpolate(method='linear', axis=0).backfill(axis=0).ffill(axis=0).values
+        data_linear_imputed = np.expand_dims(data_linear_imputed, axis=-1)
         return data_linear_imputed
 
 class MetrLADataset(TrafficDataset):

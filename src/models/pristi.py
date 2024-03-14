@@ -99,7 +99,7 @@ class CFEM(nn.Module):
     def __init__(self, channels, heads):
         super().__init__()
 
-        self.initial_conv = nn.Conv2d(1, channels, 1)
+        self.initial_conv = nn.Conv2d(2, channels, 1)
         self.initial_conv_u = nn.Conv2d(2, channels, 1)
         self.spa_module = SpaModule(channels, heads, is_pri=True)
         self.temp_module = TempModule(channels, heads)
@@ -184,11 +184,12 @@ class PriSTI(nn.Module):
     def forward(self, x_ta_t, cond_info, t, edges, weights):
         # Curioso que no mete la máscara de imputación
 
-        x_co = cond_info['x_co']
         u = cond_info['u']
-        h_pri = self.cfem(x_co, edges, weights, u)
+        x_co = cond_info['x_co']
+        h_in = torch.cat([x_ta_t, x_co], dim=-1) # (B, T, N, 2)
+        
+        h_pri = self.cfem(h_in, edges, weights, u)
 
-        h_in = torch.cat([x_ta_t, x_co], dim=-1)
         h_in = h_in.permute(0, 3, 1, 2) # from (B, T, N, 2) to (B, 2, T, N)
         h_in = self.input_projection(h_in).permute(0, 2, 3, 1) # from (B, 2, T, N) to (B, T, N, F)
         
