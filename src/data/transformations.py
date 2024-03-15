@@ -18,7 +18,7 @@ class CustomTransform(BaseTransform):
     def __call__(self, data):
         data[self.input_key] *= data[self.mask_key]
 
-        data.transform[self.input_key](data[self.interpolated_key])
+        data[self.interpolated_key] = data.transform[self.input_key](data[self.interpolated_key])
         return data
     
 class ImputatedDataset(ImputationDataset):

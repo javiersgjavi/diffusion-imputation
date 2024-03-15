@@ -47,11 +47,11 @@ def main():
     ]
 
     trainer = Trainer(
-        max_epochs=50,
+        max_epochs=100,
         default_root_dir='./logs',
         logger=logger,
         accelerator='gpu',
-        devices=[0],
+        devices=[2],
         #callbacks=callbaks,
         )
 

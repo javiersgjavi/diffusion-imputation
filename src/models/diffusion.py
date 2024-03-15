@@ -72,8 +72,8 @@ class DiffusionImputer(Imputer):
         self.log_loss('val', loss, batch_size=batch.batch_size)
 
     def test_step(self, batch, batch_idx):
-        if batch_idx > 10:
-            return torch.tensor(0.0)
+        #if batch_idx > 10:
+        #    return torch.tensor(0.0)
         x_t = self.get_imputation(batch)
         self.test_metrics.update(x_t, batch.y, batch.eval_mask)
         self.log_metrics(self.test_metrics, batch_size=batch.batch_size)
