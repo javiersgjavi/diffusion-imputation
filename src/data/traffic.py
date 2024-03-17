@@ -64,8 +64,6 @@ class TrafficDataset:
             splitter=splitter,
             batch_size=16,
             )
-        
-        #self.dm.setup()
 
     def get_dm(self):
         return self.dm

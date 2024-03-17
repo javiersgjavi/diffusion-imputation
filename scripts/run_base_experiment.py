@@ -51,11 +51,13 @@ def main():
         default_root_dir='./logs',
         logger=logger,
         accelerator='gpu',
-        devices=[2],
+        devices=[0],
         #callbacks=callbaks,
+        check_val_every_n_epoch=10
         )
 
-    trainer.fit(imputer, dm)
+
+    trainer.fit(imputer, datamodule=dm)
     
     trainer.test(imputer, datamodule=dm)#, ckpt_path=trainer.checkpoint_callback.best_model_path)
 

@@ -1,9 +1,9 @@
 import torch
 from torch import nn
 
-from tsl.nn.layers import GraphConv, MultiHeadAttention
+from tsl.nn.layers import GraphConv, MultiHeadAttention, DiffConv
 from tsl.nn.layers.norm import LayerNorm
-from src.utils import init_weights_xavier
+from src.utils import init_weights_xavier, init_weights_kaiming
 
 class TEncoder(nn.Module):
     def __init__(self, channels=128):
@@ -15,11 +15,18 @@ class TEncoder(nn.Module):
             ** (torch.arange(0, self.channels, 2).float() / self.channels)
         )
 
+        self.mlp = nn.Sequential(
+            nn.Linear(channels, channels),
+            nn.SiLU(),
+            nn.Linear(channels, channels),
+            nn.SiLU(),
+        ).apply(init_weights_xavier)
+
     def forward(self, t):
         pos_enc_a = torch.sin(t.repeat(1, self.channels // 2) * self.inv_freq.to(t.device))
         pos_enc_b = torch.cos(t.repeat(1, self.channels // 2) * self.inv_freq.to(t.device))
         pos_enc = torch.cat([pos_enc_a, pos_enc_b], dim=-1)
-        return pos_enc
+        return self.mlp(pos_enc)
     
 class TempModule(nn.Module):
     def __init__(self, channels, heads, dim_feedforward=64, dropout=0.1):
@@ -49,11 +56,12 @@ class SpaModule(nn.Module):
     def __init__(self, channels, heads, num_nodes=207, is_pri=False):
         super().__init__()
         self.is_pri = is_pri
-        self.node_encoder = nn.Conv2d(num_nodes, channels, 1).apply(init_weights_xavier)
-        self.node_encoder_pri = nn.Conv2d(num_nodes, channels, 1).apply(init_weights_xavier)
-        self.node_decoder = nn.Conv2d(channels, num_nodes, 1).apply(init_weights_xavier)
+        self.node_encoder = nn.Conv2d(num_nodes, channels, 1).apply(init_weights_kaiming)
+        self.node_encoder_pri = nn.Conv2d(num_nodes, channels, 1).apply(init_weights_kaiming)
+        self.node_decoder = nn.Conv2d(channels, num_nodes, 1).apply(init_weights_kaiming)
         self.spatial_encoder = MultiHeadAttention(axis='nodes', embed_dim=channels, heads=heads, dropout=0.1).apply(init_weights_xavier)
-        self.gcn = GraphConv(input_size=channels, output_size=channels).apply(init_weights_xavier)
+        self.linear_spatial_encoder = nn.Linear(channels, channels).apply(init_weights_xavier)
+        self.gcn = DiffConv(channels, channels, 2).apply(init_weights_xavier)
         
         self.norm_local = nn.GroupNorm(4, channels).apply(init_weights_xavier)
         self.norm_attn = nn.GroupNorm(4, channels).apply(init_weights_xavier)
@@ -66,7 +74,7 @@ class SpaModule(nn.Module):
             ).apply(init_weights_xavier)
             self.norm_final = nn.GroupNorm(4, channels).apply(init_weights_xavier)
         else:
-            self.node_encoder_pri = nn.Conv2d(num_nodes, channels, 1).apply(init_weights_xavier)
+            self.node_encoder_pri = nn.Conv2d(num_nodes, channels, 1).apply(init_weights_kaiming)
 
     def forward_gcn(self, h, edges, weights):
         h_gcn = self.gcn(h, edges, weights) + h
@@ -85,7 +93,7 @@ class SpaModule(nn.Module):
             q = k = v
 
         h_att = self.spatial_encoder(query=q,key=k,value=v)[0]
-        h_att = h_att.permute(0, 2, 1, 3) # from (B, T, K, F) to (B, K, T, F)
+        h_att = self.linear_spatial_encoder(h_att).permute(0, 2, 1, 3 ) # from (B, T, K, F) to (B, K, T, F)
         h_att = self.node_decoder(h_att).permute(0, 2, 1, 3) + h # from (B, K, T, F) to (B, T, N, F)
         h_att = h_att.reshape(h.shape[0], h.shape[3], -1) # from (B, T, N, F) to (B, F, N*T)
         h_att = self.norm_attn(h_att).view(h.shape) # from (B, F, N*T) to (B, T, N, F)
@@ -109,8 +117,8 @@ class CFEM(nn.Module):
     def __init__(self, channels, heads):
         super().__init__()
 
-        self.initial_conv = nn.Conv2d(3, channels, 1).apply(init_weights_xavier)
-        self.initial_conv_u = nn.Conv2d(2, channels, 1).apply(init_weights_xavier)
+        self.initial_conv = nn.Conv2d(1, channels, 1).apply(init_weights_kaiming) # Creo que es cierto que este al final solo recibe itp
+        self.initial_conv_u = nn.Conv2d(2, channels, 1).apply(init_weights_kaiming)
         self.spa_module = SpaModule(channels, heads, is_pri=True)
         self.temp_module = TempModule(channels, heads)
 
@@ -143,15 +151,10 @@ class NEM(nn.Module):
         self.temp_module = TempModule(channels, heads)
         self.spa_module = SpaModule(channels, heads, is_pri=False)
 
-        self.cond_projection = nn.Conv2d(channels, 2*channels, 1).apply(init_weights_xavier)
-        self.mid_projection = nn.Conv2d(channels, 2*channels, 1).apply(init_weights_xavier)
-        self.output_projection = nn.Conv2d(channels, 2*channels, 1).apply(init_weights_xavier)
-        self.t_emb_compresser = nn.Sequential(
-            nn.Linear(t_emb_size, channels),
-            nn.SiLU(),
-            nn.Linear(channels, channels),
-            nn.SiLU(),
-        ).apply(init_weights_xavier)
+        self.cond_projection = nn.Conv2d(channels, 2*channels, 1).apply(init_weights_kaiming)
+        self.mid_projection = nn.Conv2d(channels, 2*channels, 1).apply(init_weights_kaiming)
+        self.output_projection = nn.Conv2d(channels, 2*channels, 1).apply(init_weights_kaiming)
+        self.t_emb_compresser = nn.Linear(t_emb_size, channels).apply(init_weights_xavier)
         
 
     def forward(self, h_in, h_pri, t_pos, edges, weights):
@@ -191,23 +194,25 @@ class PriSTI(nn.Module):
         self.t_encoder = TEncoder(t_emb_size)
         self.cfem = CFEM(channels, heads)
 
-        self.input_projection = nn.Conv2d(3, channels, 1).apply(init_weights_xavier) # Genera features
+        self.input_projection = nn.Sequential(
+            nn.Conv2d(2, channels, 1),
+            nn.ReLU()
+        ).apply(init_weights_kaiming)
+
         self.nem_layers = nn.ModuleList([NEM(channels, heads, t_emb_size) for _ in range(4)])
         self.out = nn.Sequential(
             nn.Conv2d(channels, channels, 1),
             nn.ReLU(),
             nn.Conv2d(channels, 1, 1)
-        ).apply(init_weights_xavier)
+        ).apply(init_weights_kaiming)
 
-    def forward(self, x_ta_t, cond_info, t, edges, weights):
+    def forward(self, x_ta_t, x_co, u, t, edges, weights):
         # Curioso que no mete la máscara de imputación
 
-        u = cond_info['u']
-        x_co = cond_info['x_co']
-        mask = cond_info['mask_co']
-        h_in = torch.cat([x_ta_t, x_co, mask], dim=-1) # (B, T, N, 2)
+        #mask = cond_info['mask_co']
+        h_in = torch.cat([x_ta_t, x_co], dim=-1) # (B, T, N, 2)
         
-        h_pri = self.cfem(h_in, edges, weights, u)
+        h_pri = self.cfem(x_co, edges, weights, u)
 
         h_in = h_in.permute(0, 3, 1, 2) # from (B, T, N, 2) to (B, 2, T, N)
         h_in = self.input_projection(h_in).permute(0, 2, 3, 1) # from (B, 2, T, N) to (B, T, N, F)
