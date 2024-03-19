@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-from tsl.nn.layers import GraphConv, MultiHeadAttention, DiffConv
+from tsl.nn.layers import GraphConv, MultiHeadAttention, DiffConv, AdaptiveGraphConv, NodeEmbedding
 from tsl.nn.layers.norm import LayerNorm
 from src.utils import init_weights_xavier, init_weights_kaiming
 
@@ -61,7 +61,13 @@ class SpaModule(nn.Module):
         self.node_decoder = nn.Conv2d(channels, num_nodes, 1).apply(init_weights_kaiming)
         self.spatial_encoder = MultiHeadAttention(axis='nodes', embed_dim=channels, heads=heads, dropout=0.1).apply(init_weights_xavier)
         self.linear_spatial_encoder = nn.Linear(channels, channels).apply(init_weights_xavier)
-        self.gcn = DiffConv(channels, channels, 2).apply(init_weights_xavier)
+        self.gcn = AdaptiveGraphConv(
+            input_size=channels,
+            emb_size=10, 
+            num_nodes=207,
+            output_size=channels,
+        ).apply(init_weights_xavier)
+        self.embedding = NodeEmbedding(207, 10)
         
         self.norm_local = nn.GroupNorm(4, channels).apply(init_weights_xavier)
         self.norm_attn = nn.GroupNorm(4, channels).apply(init_weights_xavier)
@@ -77,8 +83,9 @@ class SpaModule(nn.Module):
             self.node_encoder_pri = nn.Conv2d(num_nodes, channels, 1).apply(init_weights_kaiming)
 
     def forward_gcn(self, h, edges, weights):
-        h_gcn = self.gcn(h, edges, weights) + h
-        h_gcn = h_gcn.view(h_gcn.shape[0], h_gcn.shape[3], -1) # from (B, T, N, F) to (B, F, N*T)
+
+        h_gcn = self.gcn(h.reshape(-1, 207, 64), self.embedding.get_emb()).reshape(h.shape) + h
+        h_gcn = h_gcn.reshape(h_gcn.shape[0], h_gcn.shape[3], -1) # from (B, T, N, F) to (B, F, N*T)
         h_gcn = self.norm_local(h_gcn).view(h.shape) # from (B, F, N*T) to (B, T, N, F)
         return h_gcn
 
