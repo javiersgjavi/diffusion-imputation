@@ -6,6 +6,7 @@ from torchinfo import summary
 
 from src.models.tgnn_bi_hardcoded import BiModel
 from src.models.pristi import PriSTI
+from src.models.pristi_o import PriSTIO
 
 from src.models.data_handlers import RandomStack, SchedulerCSDI, SchedulerPriSTI
     
@@ -21,20 +22,20 @@ class DiffusionImputer(Imputer):
         self.masked_mae = torch_metrics.MaskedMAE()
         self.t_sampler = RandomStack(self.num_T)
         self.loss_fn = torch_metrics.MaskedMSE()
-        self.model = PriSTI()
+        self.model = PriSTIO()
         
         self.scheduler = SchedulerPriSTI(
             num_train_timesteps=self.num_T,
             beta_schedule=scheduler_type
         )
         
-        summary(
+        '''summary(
             self.model,
             input_size=[(4, 24, 207, 1), (4, 24, 207, 1), (4, 24, 207, 2), (4,), (2, 1515), (1515,)],
             dtypes=[torch.float32, torch.float32, torch.float32, torch.int64, torch.int64, torch.float32],
             col_names=['input_size', 'output_size', 'num_params'],
             depth=4
-            )
+            )'''
         
     def get_imputation(self, batch):
         mask_co = batch.mask
