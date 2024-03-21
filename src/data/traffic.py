@@ -54,7 +54,7 @@ class TrafficDataset:
         print(f'Real missing values: {np.round((1 - np.mean(dataset.mask))* 100, 2)} %')
         print(f'Final missing values: {np.round((1 - np.mean(dataset.training_mask))* 100, 2)} %')
 
-        scalers = {'target': StandardScaler(axis=(0,1))}
+        scalers = {'target': StandardScaler(axis=0)}
        
         splitter = TemporalSplitter(val_len=0.1, test_len=0.2)
 
