@@ -4,7 +4,7 @@ from tsl.datasets import MetrLA, PemsBay
 from tsl.data import ImputationDataset
 from tsl.ops.imputation import add_missing_values
 from tsl.transforms import MaskInput
-from tsl.data.preprocessing import  MinMaxScaler
+from tsl.data.preprocessing import  MinMaxScaler, StandardScaler
 from tsl.data.datamodule import TemporalSplitter, SpatioTemporalDataModule
 
 from src.data.transformations import  ImputatedDataset, CustomTransform
@@ -54,7 +54,7 @@ class TrafficDataset:
         print(f'Real missing values: {np.round((1 - np.mean(dataset.mask))* 100, 2)} %')
         print(f'Final missing values: {np.round((1 - np.mean(dataset.training_mask))* 100, 2)} %')
 
-        scalers = {'target': MinMaxScaler(axis=(0,1))}
+        scalers = {'target': StandardScaler(axis=(0,1))}
        
         splitter = TemporalSplitter(val_len=0.1, test_len=0.2)
 
@@ -62,7 +62,7 @@ class TrafficDataset:
             dataset=torch_dataset,
             scalers=scalers,
             splitter=splitter,
-            batch_size=16,
+            batch_size=4,
             )
 
     def get_dm(self):
