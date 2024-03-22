@@ -2,6 +2,37 @@ from src.models.layers_pristi import *
 from src.utils_pristi import *
 
 
+class SideInfo(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.embed_layer = nn.Embedding(num_embeddings=207, embedding_dim=16)
+
+        observed_tp = torch.arange(24).unsqueeze(0)
+        pos = torch.cat([observed_tp for _ in range(4)], dim=0)
+        self.div_term = 1 / torch.pow(
+            10000.0, torch.arange(0, 128, 2) / 128
+        )
+        pe = torch.zeros(pos.shape[0], pos.shape[1], 128)
+        position = pos.unsqueeze(2)
+        pe[:, :, 0::2] = torch.sin(position * self.div_term)
+        pe[:, :, 1::2] = torch.cos(position * self.div_term)
+        self.time_embed = pe
+
+        self.arange = torch.arange(207)
+    
+    def forward(self, cond_mask):
+        B, _, K, L = cond_mask.shape
+
+        observed_tp= torch.arange(L).to(cond_mask.device).unsqueeze(0)
+        observed_tp = torch.cat([observed_tp for _ in range(B)], dim=0)
+        time_embed = self.time_embed.unsqueeze(2).expand(-1, -1, K, -1)
+        feature_embed = self.embed_layer(self.arange)  # (K,emb)
+        feature_embed = feature_embed.unsqueeze(0).unsqueeze(0).expand(B, L, -1, -1)
+        side_info = torch.cat([time_embed, feature_embed], dim=-1)  # (B,L,K,*)
+        side_info = side_info.permute(0, 3, 2, 1)  # (B,*,K,L)
+
+        return side_info
+
 class PriSTIO(nn.Module):
     def __init__(self, inputdim=2, target_dim=207, is_itp=True):
         super().__init__()
@@ -16,10 +47,11 @@ class PriSTIO(nn.Module):
             'is_cross_t': True, 
             'is_cross_s': True, 
             'adj_file': 'metr-la', 
-            'side_dim': 2,
+            'side_dim': 144,
             'device': 'cuda',
             'num_steps': 50}
 
+        self.side_info = SideInfo()
         self.channels = config["channels"]
         self.is_itp = is_itp
         self.itp_channels = None
@@ -39,7 +71,6 @@ class PriSTIO(nn.Module):
 
         self.adj = get_similarity_metrla(thr=0.1)
         self.support = compute_support_gwn(self.adj, device=config["device"])
-        torch.save(self.support, 'support.pt')
         self.is_adp = config["is_adp"]
         if self.is_adp:
             node_num = self.adj.shape[0]
@@ -75,6 +106,8 @@ class PriSTIO(nn.Module):
         x_ta_t = x_ta_t.permute(0, 3, 2, 1)
         x_co = x_co.permute(0, 3, 2, 1)
         u = u.permute(0, 3, 2, 1)
+        u = self.side_info(x_co)
+
         return self.forward_o(x_ta_t, u, t, x_co, None).permute(0, 2, 1).unsqueeze(-1)
 
     def forward_o(self, x, side_info, diffusion_step, itp_x, cond_mask):

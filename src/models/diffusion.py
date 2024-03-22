@@ -27,8 +27,8 @@ class DiffusionImputer(Imputer):
         self.scheduler = SchedulerPriSTI(
             num_train_timesteps=self.num_T,
             beta_schedule=scheduler_type,
-            #clip_sample=False,
-            #thresholding=False
+            clip_sample=False,
+            thresholding=False
         )
         
         '''summary(
@@ -47,13 +47,10 @@ class DiffusionImputer(Imputer):
         x_ta_t, cond_info, _ = self.scheduler.prepare_data(batch)
         
         steps_chain = range(0, self.num_T)
-        pbar = tqdm(steps_chain, desc=f'[INFO] Imputing batch...')
         for i in reversed(steps_chain):
             t = (torch.ones(x_ta_t.shape[0]) * i).to(x_ta_t.device)
             noise_pred = self.model(x_ta_t, cond_info['x_co'], cond_info['u'], t, edge_index, edge_weight)
             x_ta_t = self.scheduler.clean_backwards(x_ta_t, noise_pred, mask_co, t)
-            pbar.update(1)
-        pbar.close()
 
         x_0 = batch.transform['x'].inverse_transform(x_ta_t)
         return x_0
