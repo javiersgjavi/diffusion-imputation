@@ -26,7 +26,9 @@ class DiffusionImputer(Imputer):
         
         self.scheduler = SchedulerPriSTI(
             num_train_timesteps=self.num_T,
-            beta_schedule=scheduler_type
+            beta_schedule=scheduler_type,
+            #clip_sample=False,
+            #thresholding=False
         )
         
         '''summary(
@@ -73,11 +75,8 @@ class DiffusionImputer(Imputer):
         return loss
     
     def validation_step(self, batch, batch_idx):
-        loss_sum = 0
-        for i in range(self.num_T):
-            t = (torch.ones(batch.x.shape[0]) * i).to(batch.x.device).int()
-            loss_sum += self.calculate_loss(batch, t).detach()
-        loss = loss_sum / self.num_T
+        x_t = self.get_imputation(batch)
+        loss = self.masked_mae(x_t, batch.y, batch.eval_mask)
         self.log_loss('val', loss, batch_size=batch.batch_size)
 
     def test_step(self, batch, batch_idx):
