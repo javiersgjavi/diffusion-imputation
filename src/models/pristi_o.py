@@ -7,8 +7,11 @@ class SideInfo(nn.Module):
         super().__init__()
         self.embed_layer = nn.Embedding(num_embeddings=207, embedding_dim=16)
 
+        self.arange = torch.arange(207).to('cuda:2')
+    
+    def get_time(self, B):
         observed_tp = torch.arange(24).unsqueeze(0)
-        pos = torch.cat([observed_tp for _ in range(4)], dim=0)
+        pos = torch.cat([observed_tp for _ in range(B)], dim=0)
         self.div_term = 1 / torch.pow(
             10000.0, torch.arange(0, 128, 2) / 128
         )
@@ -16,22 +19,20 @@ class SideInfo(nn.Module):
         position = pos.unsqueeze(2)
         pe[:, :, 0::2] = torch.sin(position * self.div_term)
         pe[:, :, 1::2] = torch.cos(position * self.div_term)
-        self.time_embed = pe
+        return pe
 
-        self.arange = torch.arange(207)
-    
     def forward(self, cond_mask):
         B, _, K, L = cond_mask.shape
 
         observed_tp= torch.arange(L).to(cond_mask.device).unsqueeze(0)
         observed_tp = torch.cat([observed_tp for _ in range(B)], dim=0)
-        time_embed = self.time_embed.unsqueeze(2).expand(-1, -1, K, -1)
+        time_embed = self.get_time(B).unsqueeze(2).expand(-1, -1, K, -1).to(cond_mask.device)
         feature_embed = self.embed_layer(self.arange)  # (K,emb)
         feature_embed = feature_embed.unsqueeze(0).unsqueeze(0).expand(B, L, -1, -1)
         side_info = torch.cat([time_embed, feature_embed], dim=-1)  # (B,L,K,*)
         side_info = side_info.permute(0, 3, 2, 1)  # (B,*,K,L)
 
-        return side_info
+        return side_info.to(cond_mask.device)
 
 class PriSTIO(nn.Module):
     def __init__(self, inputdim=2, target_dim=207, is_itp=True):
@@ -48,7 +49,7 @@ class PriSTIO(nn.Module):
             'is_cross_s': True, 
             'adj_file': 'metr-la', 
             'side_dim': 144,
-            'device': 'cuda',
+            'device': 'cuda:2',
             'num_steps': 50}
 
         self.side_info = SideInfo()

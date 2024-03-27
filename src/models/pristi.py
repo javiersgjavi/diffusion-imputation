@@ -63,6 +63,8 @@ class SpaModule(nn.Module):
         self.spatial_encoder = MultiHeadAttention(axis='nodes', embed_dim=channels, heads=heads, dropout=0.1).apply(init_weights_xavier)
         self.linear_spatial_encoder = nn.Linear(channels, channels).apply(init_weights_xavier)
         self.support = torch.load('support.pt')
+        self.support[0] = self.support[0].to(self.node_decoder.weight.device)
+        self.support[1] = self.support[1].to(self.node_decoder.weight.device)
         self.nodevec1 = nn.Parameter(torch.randn(num_nodes, 10), requires_grad=True)
         self.nodevec2 = nn.Parameter(torch.randn(10, num_nodes), requires_grad=True)
         self.support.append([self.nodevec1, self.nodevec2])

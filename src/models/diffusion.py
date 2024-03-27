@@ -8,7 +8,7 @@ from src.models.tgnn_bi_hardcoded import BiModel
 from src.models.pristi import PriSTI
 from src.models.pristi_o import PriSTIO
 
-from src.models.data_handlers import RandomStack, SchedulerCSDI, SchedulerPriSTI
+from src.models.data_handlers import RandomStack, SchedulerCSDI, SchedulerPriSTI, create_interpolation, redefine_eval_mask
     
 class DiffusionImputer(Imputer):
     def __init__(self, scheduler_type='squaredcos_cap_v2', *args, **kwargs):
@@ -26,9 +26,9 @@ class DiffusionImputer(Imputer):
         
         self.scheduler = SchedulerPriSTI(
             num_train_timesteps=self.num_T,
-            beta_schedule=scheduler_type,
-            clip_sample=False,
-            thresholding=False
+            #beta_schedule=scheduler_type,
+            beta_start=0.0001,
+            beta_end=0.2,
         )
         
         '''summary(
@@ -46,8 +46,7 @@ class DiffusionImputer(Imputer):
 
         x_ta_t, cond_info, _ = self.scheduler.prepare_data(batch)
         
-        steps_chain = range(0, self.num_T)
-        for i in reversed(steps_chain):
+        for i in reversed(range(self.num_T)):
             t = (torch.ones(x_ta_t.shape[0]) * i).to(x_ta_t.device)
             noise_pred = self.model(x_ta_t, cond_info['x_co'], cond_info['u'], t, edge_index, edge_weight)
             x_ta_t = self.scheduler.clean_backwards(x_ta_t, noise_pred, mask_co, t)
@@ -64,7 +63,12 @@ class DiffusionImputer(Imputer):
         x_ta_t, cond_info, noise = self.scheduler.prepare_data(batch,t=t)
 
         noise_pred  = self.model(x_ta_t, cond_info['x_co'], cond_info['u'], t, edge_index, edge_weight)
-        return self.loss_fn(noise, noise_pred, mask_ta)
+
+        residual = (noise - noise_pred) * mask_ta
+        num_eval = mask_ta.sum()
+        loss = (residual ** 2).sum() / (num_eval if num_eval > 0 else 1)
+
+        return loss
 
     def training_step(self, batch, batch_idx):
         loss = self.calculate_loss(batch)
@@ -72,21 +76,31 @@ class DiffusionImputer(Imputer):
         return loss
     
     def validation_step(self, batch, batch_idx):
-        x_t = self.get_imputation(batch)
-        loss = self.masked_mae(x_t, batch.y, batch.eval_mask)
+        loss = torch.zeros(1).to(batch.x.device)
+        for t in range(self.num_T):
+            t = (torch.ones(batch.x.shape[0]) * t).to(batch.x.device)
+            loss += self.calculate_loss(batch, t)
+        loss /= self.num_T
         self.log_loss('val', loss, batch_size=batch.batch_size)
 
     def test_step(self, batch, batch_idx):
-        #if batch_idx > 10:
-        #    return torch.tensor(0.0)
-        x_t = self.get_imputation(batch)
+        x_t_list = []
+        for _ in range(100):
+            x_t = self.get_imputation(batch)
+            x_t_list.append(x_t)
+        x_t = torch.cat(x_t_list, dim=-1)
+        x_t = x_t.median(dim=-1).values.unsqueeze(-1)
         self.test_metrics.update(x_t, batch.y, batch.eval_mask)
         self.log_metrics(self.test_metrics, batch_size=batch.batch_size)
 
     def configure_optimizers(self):
         optim = torch.optim.Adam(self.model.parameters(), lr=1e-3, weight_decay=1e-6)
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, T_max=1000)
+        #scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, T_max=1000)
+        p1 = int(0.75 * 50)
+        p2 = int(0.9 * 50)
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(optim, milestones=[p1, p2], gamma=0.1)
         return [optim], [scheduler]
+        #return optim
     
     def log_metrics(self, metrics, **kwargs):
         self.log_dict(
@@ -108,3 +122,18 @@ class DiffusionImputer(Imputer):
             prog_bar=True,
             **kwargs
         )
+
+    def on_train_batch_start(self, batch, batch_idx: int) -> None:
+        super().on_train_batch_start(batch, batch_idx)
+        # print('Training batch start')
+        batch = create_interpolation(batch)
+        batch = redefine_eval_mask(batch)
+
+    def on_validation_batch_start(self, batch, batch_idx: int) -> None:
+        super().on_validation_batch_start(batch, batch_idx)
+        batch = create_interpolation(batch)
+
+    def on_test_batch_start(self, batch, batch_idx: int) -> None:
+        super().on_test_batch_start(batch, batch_idx)
+        batch = create_interpolation(batch)
+

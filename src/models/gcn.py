@@ -42,6 +42,7 @@ class AdaptiveGCN(nn.Module):
             adp = F.softmax(F.relu(torch.mm(nodevec1, nodevec2)), dim=1)
             support = support + [adp]
         for a in support:
+            a = a.to(x.device)
             x1 = torch.einsum('ncvl,wv->ncwl', (x, a)).contiguous()
             out.append(x1)
             for k in range(2, self.order + 1):
