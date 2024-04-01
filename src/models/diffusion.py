@@ -1,37 +1,17 @@
 import torch
 from tqdm import tqdm
-from diffusers import DDPMScheduler
 from tsl.engines.imputer import Imputer
 from tsl.metrics import torch as torch_metrics
+from torchinfo import summary
+
 from src.models.tgnn_bi_hardcoded import BiModel
+from src.models.pristi import PriSTI
+from src.models.pristi_o import PriSTIO
 
-class RandomStack:
-    def __init__(self, high, low=0, size=1e6):
-        self.size = int(size)
-        self.high = high
-        self.low = low
-        self.stack = torch.randint(low=low, high=high, size=(self.size,))
-        self.idx = 0
-
-    def get(self, n=1):
-        if self.idx + n >= self.size:
-            self.stack = torch.randint(low=self.low, high=self.high, size=(self.size,))
-            self.idx = 0
-        res = self.stack[self.idx: self.idx + n]
-        self.idx += n
-        return res
-    
-class Scheduler(DDPMScheduler):
-    def forward(self, x, step):
-        noise = torch.randn_like(x)
-        return super().add_noise(x, noise, step), noise
-    
-    def backwards(self, x_t, predicted_noise, step):
-        step = step[0].int()
-        return super().step(predicted_noise, step, x_t).prev_sample
+from src.models.data_handlers import RandomStack, SchedulerPriSTI, create_interpolation, redefine_eval_mask
     
 class DiffusionImputer(Imputer):
-    def __init__(self, scheduler_type='squaredcos_cap_v2', *args, **kwargs):
+    def __init__(self, scheduler_type='scaled_linear', *args, **kwargs):
         kwargs['metrics'] = {
             'mae': torch_metrics.MaskedMAE(),
             'mse': torch_metrics.MaskedMSE(),
@@ -42,85 +22,97 @@ class DiffusionImputer(Imputer):
         self.masked_mae = torch_metrics.MaskedMAE()
         self.t_sampler = RandomStack(self.num_T)
         self.loss_fn = torch_metrics.MaskedMSE()
-        self.model = BiModel()
-        self.scheduler = Scheduler(
+        self.model = PriSTI()
+        
+        self.scheduler = SchedulerPriSTI(
             num_train_timesteps=self.num_T,
-            beta_schedule=scheduler_type
+            beta_schedule=scheduler_type,
+            beta_start=0.0001,
+            beta_end=0.2,
+            clip_sample=False,
         )
-
-    def obtain_data_masked(self, x_co_0, mask_co, u, t=None, x_real_0=None):
-
-        if x_real_0 is None:
-            noise = torch.randn_like(x_co_0)
-            x_noisy_t = noise
-        else:
-            x_noisy_t, noise = self.scheduler.forward(x_real_0, t)
-
-        zeros = torch.zeros_like(x_co_0)
-        x_ta_t = torch.where(mask_co.bool(), zeros, x_noisy_t)
-    
-        u = u.view(u.shape[0], u.shape[1], 1, u.shape[2]).repeat(1, 1, x_co_0.shape[2], 1)
-        cond_info = torch.cat([x_co_0, mask_co, u], dim=-1)
-
-        return x_ta_t, cond_info, noise
+        
+        summary(
+            self.model,
+            input_size=[(4, 24, 207, 1), (4, 24, 207, 1), (4, 24, 207, 2), (4,), (2, 1515), (1515,)],
+            dtypes=[torch.float32, torch.float32, torch.float32, torch.int64, torch.int64, torch.float32],
+            col_names=['input_size', 'output_size', 'num_params'],
+            depth=2
+            )
         
     def get_imputation(self, batch):
-        x_co_0 = batch.x
-        u = batch.u
         mask_co = batch.mask
-        transform = batch.transform
         edge_index = batch.edge_index
         edge_weight = batch.edge_weight
-        zeros = torch.zeros_like(x_co_0)
 
-        x_ta_t, cond_info, _ = self.obtain_data_masked(x_co_0, mask_co, u)
+        x_ta_t, cond_info, _ = self.scheduler.prepare_data(batch)
         
-        steps_chain = range(0, self.num_T)
-        pbar = tqdm(steps_chain, desc=f'[INFO] Imputing batch...')
-        for i in reversed(steps_chain):
-            t = (torch.ones(x_ta_t.shape[0]) * i)
-            noise_pred = self.model(x_ta_t, x_co_0, t, cond_info, edge_index, edge_weight)
-            x_ta_t = self.scheduler.backwards(x_ta_t, noise_pred, t)
-            x_ta_t = torch.where(mask_co.bool(), zeros, x_ta_t)
-            pbar.update(1)
-        pbar.close()
+        for i in reversed(range(self.num_T)):
+            t = (torch.ones(x_ta_t.shape[0]) * i).to(x_ta_t.device)
+            noise_pred = self.model(x_ta_t, cond_info['x_co'], cond_info['u'], t, edge_index, edge_weight)
+            x_ta_t = self.scheduler.clean_backwards(x_ta_t, noise_pred, mask_co, t)
 
-        x_0 = transform['x'].inverse_transform(x_ta_t)
+        x_0 = batch.transform['x'].inverse_transform(x_ta_t)
         return x_0
     
-    def calculate_loss(self, batch):
-        x_co_0 = batch.x
-        x_real_0 = batch.transform['y'](batch.y)
-        u = batch.u
-        mask_co = batch.mask
+    def calculate_loss(self, batch, t=None):
         mask_ta = batch.eval_mask
         edge_index = batch.edge_index
         edge_weight = batch.edge_weight
 
-        t = self.t_sampler.get(x_co_0.shape[0]).to(x_co_0.device)
-        x_ta_t, cond_info, noise = self.obtain_data_masked(x_co_0, mask_co, u, t=t, x_real_0=x_real_0)
+        t = self.t_sampler.get(mask_ta.shape[0]).to(mask_ta.device) if t is None else t
+        x_ta_t, cond_info, noise = self.scheduler.prepare_data(batch,t=t)
 
-        noise_pred  = self.model(x_ta_t, x_co_0, t, cond_info, edge_index, edge_weight)
-        return self.loss_fn(noise, noise_pred, mask_ta)
+        noise_pred  = self.model(x_ta_t, cond_info['x_co'], cond_info['u'], t, edge_index, edge_weight)
+
+        residual = (noise - noise_pred) * mask_ta
+        num_eval = mask_ta.sum()
+        loss = (residual ** 2).sum() / (num_eval if num_eval > 0 else 1)
+
+        return loss
 
     def training_step(self, batch, batch_idx):
+        batch = create_interpolation(batch)
+        batch = redefine_eval_mask(batch)
+
         loss = self.calculate_loss(batch)
         self.log_loss('train', loss, batch_size=batch.batch_size)
+
         return loss
     
     def validation_step(self, batch, batch_idx):
-        loss = self.calculate_loss(batch)
+        batch = create_interpolation(batch)
+
+        loss = torch.zeros(1).to(batch.x.device)
+        for t in range(self.num_T):
+            t = (torch.ones(batch.x.shape[0]) * t).to(batch.x.device)
+            loss += self.calculate_loss(batch, t)
+
+        loss /= self.num_T
         self.log_loss('val', loss, batch_size=batch.batch_size)
 
     def test_step(self, batch, batch_idx):
-        x_t = self.get_imputation(batch)
+        batch = create_interpolation(batch)
+        x_t_list = []
+
+        for _ in range(100):
+            x_t = self.get_imputation(batch)
+            x_t_list.append(x_t)
+
+        x_t = torch.cat(x_t_list, dim=-1)
+        x_t = x_t.median(dim=-1).values.unsqueeze(-1)
+        
         self.test_metrics.update(x_t, batch.y, batch.eval_mask)
         self.log_metrics(self.test_metrics, batch_size=batch.batch_size)
 
     def configure_optimizers(self):
-        optim = torch.optim.AdamW(self.model.parameters(), lr=1e-3, weight_decay=0.1)
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, T_max=1000)
+        optim = torch.optim.Adam(self.model.parameters(), lr=1e-3, weight_decay=1e-6)
+        #scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, T_max=1000)
+        p1 = int(0.75 * 50)
+        p2 = int(0.9 * 50)
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(optim, milestones=[p1, p2], gamma=0.1)
         return [optim], [scheduler]
+        #return optim
     
     def log_metrics(self, metrics, **kwargs):
         self.log_dict(
@@ -142,3 +134,5 @@ class DiffusionImputer(Imputer):
             prog_bar=True,
             **kwargs
         )
+
+

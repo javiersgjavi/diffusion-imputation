@@ -1,4 +1,5 @@
 import sys
+import numpy as np
 sys.path.append('./')
 
 from torch.optim import Adam, AdamW
@@ -13,12 +14,16 @@ from pytorch_lightning import Trainer
 def main():
     
     dm = MetrLADataset().get_dm()
+    dm_stride = MetrLADataset(stride=24).get_dm()
+
+    dm.setup()
+    dm_stride.setup()
 
     imputer = DiffusionImputer(
         model_kwargs=None,
         optim_class=AdamW,
         optim_kwargs=dict({'lr': 1e-3}),
-        whiten_prob=None,
+        whiten_prob=list(np.arange(0,1,0.001)),
         prediction_loss_weight=1,
         impute_only_missing = True,
         warm_up_steps=1,
@@ -30,7 +35,7 @@ def main():
         save_dir='./logs',
     )
 
-    callbaks = [
+    callbacks = [
         #EarlyStopping(
         #    monitor='val_loss',
         #    patience=200,
@@ -51,13 +56,20 @@ def main():
         default_root_dir='./logs',
         logger=logger,
         accelerator='gpu',
-        devices=[0],
-        callbacks=callbaks,
+        devices=[2],
+        callbacks=callbacks,
+        #limit_train_batches=0.002
         )
 
-    trainer.fit(imputer, dm)
+
+    train_loader = dm.train_dataloader()
+    val_loader = dm_stride.val_dataloader()
+    trainer.fit(imputer, train_loader, val_loader)
     
-    trainer.test(imputer, datamodule=dm, ckpt_path=trainer.checkpoint_callback.best_model_path)
+    imputer.load_model(callbacks[0].best_model_path)
+    imputer.freeze()
+
+    trainer.test(imputer, datamodule=dm_stride)
 
 if __name__=='__main__':
     main()

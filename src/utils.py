@@ -47,6 +47,21 @@ def init_weights_xavier(m: nn.Module) -> None:
         if m.bias is not None: 
             m.bias.data.fill_(0.01)
 
+def init_weights_kaiming(m: nn.Module) -> None:
+    """
+    Initialize the weights of the neural network module using the Kaiming initialization method.
+
+    Args:
+        m (nn.Module): Neural network module
+
+    Returns:
+        None
+    """
+    if isinstance(m, nn.Conv2d) or isinstance(m, nn.Conv1d) or isinstance(m, nn.Conv3d):
+        nn.init.kaiming_uniform_(m.weight)
+        if m.bias is not None: 
+            m.bias.data.fill_(0.01)
+
 def clean_hyperparams(args, output_size_decoder):
     in_features = 2
     encoder_name = args['encoder_name']

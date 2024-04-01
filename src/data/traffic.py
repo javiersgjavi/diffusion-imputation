@@ -1,13 +1,18 @@
 import numpy as np
+import pandas as pd
 from tsl.datasets import MetrLA, PemsBay
 from tsl.data import ImputationDataset
 from tsl.ops.imputation import add_missing_values
 from tsl.transforms import MaskInput
-from tsl.data.preprocessing import StandardScaler, MinMaxScaler
+from tsl.data.preprocessing import  MinMaxScaler, StandardScaler
 from tsl.data.datamodule import TemporalSplitter, SpatioTemporalDataModule
 
+from src.data.transformations import ImputatedDataset, CustomTransform, CustomScaler
+
 class TrafficDataset:
-    def __init__(self, p_fault=None, p_noise=None, point=True):
+    def __init__(self, p_fault=None, p_noise=None, point=True, stride=1):
+
+        og_mask = self.data_class(impute_zeros=False).mask
 
         if point:
             p_fault = 0. if p_fault is None else p_fault
@@ -18,7 +23,7 @@ class TrafficDataset:
             p_noise = 0.05 if p_noise is None else p_noise
 
         dataset = add_missing_values(
-            self.data_class(),
+            self.data_class(impute_zeros=False),
             p_fault=p_fault,
             p_noise=p_noise,
             min_seq=12,
@@ -34,22 +39,23 @@ class TrafficDataset:
             )
 
         covariates = {'u': dataset.datetime_encoded('day').values}
-
-        torch_dataset = ImputationDataset(
+        
+        torch_dataset = ImputatedDataset(
             target=dataset.dataframe(),
+            og_mask = og_mask,
             mask = dataset.training_mask,
             eval_mask = dataset.eval_mask,
             covariates=covariates,
-            transform=MaskInput(),
+            transform=CustomTransform(),
             connectivity=connectivity,
             window=24,
-            stride=1
+            stride=stride
         )
 
         print(f'Real missing values: {np.round((1 - np.mean(dataset.mask))* 100, 2)} %')
         print(f'Final missing values: {np.round((1 - np.mean(dataset.training_mask))* 100, 2)} %')
 
-        scalers = {'target': MinMaxScaler(axis=(0,1))}
+        scalers = {'target': CustomScaler()}
        
         splitter = TemporalSplitter(val_len=0.1, test_len=0.2)
 
@@ -57,10 +63,8 @@ class TrafficDataset:
             dataset=torch_dataset,
             scalers=scalers,
             splitter=splitter,
-            batch_size=64,
+            batch_size=4,
             )
-        
-        #self.dm.setup()
 
     def get_dm(self):
         return self.dm
