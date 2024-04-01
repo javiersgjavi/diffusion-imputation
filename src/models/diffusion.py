@@ -8,10 +8,10 @@ from src.models.tgnn_bi_hardcoded import BiModel
 from src.models.pristi import PriSTI
 from src.models.pristi_o import PriSTIO
 
-from src.models.data_handlers import RandomStack, SchedulerCSDI, SchedulerPriSTI, create_interpolation, redefine_eval_mask
+from src.models.data_handlers import RandomStack, SchedulerPriSTI, create_interpolation, redefine_eval_mask
     
 class DiffusionImputer(Imputer):
-    def __init__(self, scheduler_type='squaredcos_cap_v2', *args, **kwargs):
+    def __init__(self, scheduler_type='scaled_linear', *args, **kwargs):
         kwargs['metrics'] = {
             'mae': torch_metrics.MaskedMAE(),
             'mse': torch_metrics.MaskedMSE(),
@@ -22,22 +22,23 @@ class DiffusionImputer(Imputer):
         self.masked_mae = torch_metrics.MaskedMAE()
         self.t_sampler = RandomStack(self.num_T)
         self.loss_fn = torch_metrics.MaskedMSE()
-        self.model = PriSTIO()
+        self.model = PriSTI()
         
         self.scheduler = SchedulerPriSTI(
             num_train_timesteps=self.num_T,
-            #beta_schedule=scheduler_type,
+            beta_schedule=scheduler_type,
             beta_start=0.0001,
             beta_end=0.2,
+            clip_sample=False,
         )
         
-        '''summary(
+        summary(
             self.model,
             input_size=[(4, 24, 207, 1), (4, 24, 207, 1), (4, 24, 207, 2), (4,), (2, 1515), (1515,)],
             dtypes=[torch.float32, torch.float32, torch.float32, torch.int64, torch.int64, torch.float32],
             col_names=['input_size', 'output_size', 'num_params'],
-            depth=4
-            )'''
+            depth=2
+            )
         
     def get_imputation(self, batch):
         mask_co = batch.mask
@@ -71,25 +72,36 @@ class DiffusionImputer(Imputer):
         return loss
 
     def training_step(self, batch, batch_idx):
+        batch = create_interpolation(batch)
+        batch = redefine_eval_mask(batch)
+
         loss = self.calculate_loss(batch)
         self.log_loss('train', loss, batch_size=batch.batch_size)
+
         return loss
     
     def validation_step(self, batch, batch_idx):
+        batch = create_interpolation(batch)
+
         loss = torch.zeros(1).to(batch.x.device)
         for t in range(self.num_T):
             t = (torch.ones(batch.x.shape[0]) * t).to(batch.x.device)
             loss += self.calculate_loss(batch, t)
+
         loss /= self.num_T
         self.log_loss('val', loss, batch_size=batch.batch_size)
 
     def test_step(self, batch, batch_idx):
+        batch = create_interpolation(batch)
         x_t_list = []
+
         for _ in range(100):
             x_t = self.get_imputation(batch)
             x_t_list.append(x_t)
+
         x_t = torch.cat(x_t_list, dim=-1)
         x_t = x_t.median(dim=-1).values.unsqueeze(-1)
+        
         self.test_metrics.update(x_t, batch.y, batch.eval_mask)
         self.log_metrics(self.test_metrics, batch_size=batch.batch_size)
 
@@ -123,17 +135,4 @@ class DiffusionImputer(Imputer):
             **kwargs
         )
 
-    def on_train_batch_start(self, batch, batch_idx: int) -> None:
-        super().on_train_batch_start(batch, batch_idx)
-        # print('Training batch start')
-        batch = create_interpolation(batch)
-        batch = redefine_eval_mask(batch)
-
-    def on_validation_batch_start(self, batch, batch_idx: int) -> None:
-        super().on_validation_batch_start(batch, batch_idx)
-        batch = create_interpolation(batch)
-
-    def on_test_batch_start(self, batch, batch_idx: int) -> None:
-        super().on_test_batch_start(batch, batch_idx)
-        batch = create_interpolation(batch)
 

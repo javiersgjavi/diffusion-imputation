@@ -10,13 +10,9 @@ import time
 import pandas as pd
 import numpy as np
 
-
-
-
 class CustomTransform(BaseTransform):
     def __init__(self):
         super().__init__()
-        self.nan = np.nan
 
     def normalize(self, data, label):
         data[label] = data.transform['x'](data[label])
@@ -29,15 +25,10 @@ class CustomTransform(BaseTransform):
     def mask_y(self, data):
         data['y'] = torch.where(data['og_mask'], data.target['y'], 0)
         return data
-
-    
-    
     
     def __call__(self, data):
-        #print('mask data')
         data = self.mask_input(data)
         data = self.mask_y(data)
-        #print(f'Interpolation time: {time.time() - t}')
         return data
     
 class ImputatedDataset(ImputationDataset):
@@ -69,15 +60,19 @@ class ImputatedDataset(ImputationDataset):
                                                        pattern='t n f',
                                                        preprocess=False)
 
-class CustomScaler(Scaler):
-    def __init__(self, axis=0):
+class CustomScaler(StandardScaler):
+    '''def __init__(self):
         super().__init__()
         with open('./data/metr_la/metr_meanstd.pk', 'rb') as f:
             self.bias, self.scale = pickle.load(f)
 
         self.bias = torch.tensor(self.bias, dtype=torch.float32).unsqueeze(0).unsqueeze(-1)
-        self.scale = torch.tensor(self.scale, dtype=torch.float32).unsqueeze(0).unsqueeze(-1)
+        self.scale = torch.tensor(self.scale, dtype=torch.float32).unsqueeze(0).unsqueeze(-1)'''
     
-    def fit(self, *args, **kwargs):
+    def fit(self, x, mask=None, keepdims=True):
+        size = int(x.shape[0] * 0.7)
+        x = x[:size].unsqueeze(0)
+        self.bias = torch.mean(x, dim=1, keepdims=keepdims)[0]
+        self.scale = torch.std(x, dim=1, keepdims=keepdims)[0]
         return self
     

@@ -58,6 +58,7 @@ def main():
         accelerator='gpu',
         devices=[2],
         callbacks=callbacks,
+        #limit_train_batches=0.002
         )
 
 
@@ -65,8 +66,8 @@ def main():
     val_loader = dm_stride.val_dataloader()
     trainer.fit(imputer, train_loader, val_loader)
     
-   # imputer.load_model(callbacks[0].best_model_path)
-   # imputer.freeze()
+    imputer.load_model(callbacks[0].best_model_path)
+    imputer.freeze()
 
     trainer.test(imputer, datamodule=dm_stride)
 

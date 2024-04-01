@@ -7,7 +7,7 @@ class SideInfo(nn.Module):
         super().__init__()
         self.embed_layer = nn.Embedding(num_embeddings=207, embedding_dim=16)
 
-        self.arange = torch.arange(207).to('cuda:2')
+        self.arange = torch.arange(207)#.to('cuda:2')
     
     def get_time(self, B):
         observed_tp = torch.arange(24).unsqueeze(0)
@@ -27,6 +27,7 @@ class SideInfo(nn.Module):
         observed_tp= torch.arange(L).to(cond_mask.device).unsqueeze(0)
         observed_tp = torch.cat([observed_tp for _ in range(B)], dim=0)
         time_embed = self.get_time(B).unsqueeze(2).expand(-1, -1, K, -1).to(cond_mask.device)
+        self.arange = self.arange.to(cond_mask.device)
         feature_embed = self.embed_layer(self.arange)  # (K,emb)
         feature_embed = feature_embed.unsqueeze(0).unsqueeze(0).expand(B, L, -1, -1)
         side_info = torch.cat([time_embed, feature_embed], dim=-1)  # (B,L,K,*)
@@ -49,7 +50,7 @@ class PriSTIO(nn.Module):
             'is_cross_s': True, 
             'adj_file': 'metr-la', 
             'side_dim': 144,
-            'device': 'cuda:2',
+            'device': 'cpu',#'cuda:2',
             'num_steps': 50}
 
         self.side_info = SideInfo()

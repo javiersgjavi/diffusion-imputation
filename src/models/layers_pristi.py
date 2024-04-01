@@ -147,6 +147,7 @@ class AdaptiveGCN(nn.Module):
             adp = F.softmax(F.relu(torch.mm(nodevec1, nodevec2)), dim=1)
             support = support + [adp]
         for a in support:
+            a = a.to(x.device)
             x1 = torch.einsum('ncvl,wv->ncwl', (x, a)).contiguous()
             out.append(x1)
             for k in range(2, self.order + 1):
@@ -308,9 +309,13 @@ class Attn_spa(nn.Module):
         dim_head = default(dim_head, dim // heads)
         self.dim_head = dim_head
 
+
         self.to_q = nn.Linear(dim, dim_head * heads, bias=False)
 
         kv_dim = dim_head if one_kv_head else (dim_head * heads)
+
+        print(f'dim: {dim}, seq_len: {seq_len}, k: {k}, heads: {heads}, dim_head: {dim_head}, one_kv_head: {one_kv_head}, share_kv: {share_kv}, dropout: {dropout}, kv_dim: {kv_dim}')
+
         self.to_k = nn.Linear(dim, kv_dim, bias=False)
         self.proj_k = nn.Parameter(init_(torch.zeros(seq_len, k)))
 
