@@ -86,14 +86,19 @@ class TempModule(nn.Module):
             nn.Dropout(dropout)
         ).apply(init_weights_xavier)
 
+        self.final_norm = nn.GroupNorm(4, channels).apply(init_weights_xavier)
+
 
     def forward(self, v, q=None, k=None):
         if q is None or k is None:
-            q = k= v
+            q = k = v
         h_att = self.temporal_encoder(query=q,key=k,value=v)[0]
         h = v + self.dropout(h_att)
         h_mlp = h + self.first_mlp_layer(h)
-        return self.layer_norm(h_mlp)
+        h_mlp = h_mlp + v
+        h_mlp = h_mlp.permute(0, 3, 1, 2) # from (B, T, N, F) to (B, F, T, N)
+        res = self.final_norm(h_mlp).permute(0, 2, 3, 1) # from (B, F, T, N) to (B, T, N, F)
+        return res
 
 class AttentionEncoded(nn.Module):
     def __init__(self, channels=64, heads=8, num_nodes=207):
@@ -191,8 +196,10 @@ class CFEM(nn.Module):
         side_info = self.initial_conv_side_info(side_info.permute(0,3,1,2)) # from (B, T, N, 1) to (B, 1, T, N)
         h = x + side_info
         h = h.permute(0,2,3,1) # from (B, F, T, N) to (B, T, N, F)
-        h_temp = self.temp_module(h) + h
-        h_gcn, h_att = self.spa_module(h_temp, edges, weights, support=support)
+
+
+        h_gcn, h_att = self.spa_module(h, edges, weights, support=support)
+        h_temp = self.temp_module(h)
 
         h_final = h_temp + h_gcn + h_att
 
@@ -268,10 +275,10 @@ class PriSTI(nn.Module):
         ).apply(init_weights_kaiming)
 
 
-        self.support = torch.load('support.pt')
+        self.support = torch.load('support.pt') # Esto debería de eliminarlo
         self.support[0] = self.support[0]
         self.support[1] = self.support[1]
-        self.nodevec1 = nn.Parameter(torch.randn(207, 10), requires_grad=True) # Esto tengo que sacarlo de aqui
+        self.nodevec1 = nn.Parameter(torch.randn(207, 10), requires_grad=True) 
         self.nodevec2 = nn.Parameter(torch.randn(10, 207), requires_grad=True)
         self.support.append([self.nodevec1, self.nodevec2])
 
