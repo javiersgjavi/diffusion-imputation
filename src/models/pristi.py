@@ -77,6 +77,7 @@ class TempModule(nn.Module):
         self.temporal_encoder = MultiHeadAttention(axis='time', embed_dim=channels, heads=heads, dropout=dropout).apply(init_weights_xavier)
         self.dropout = nn.Dropout(dropout)
         self.layer_norm = LayerNorm(channels)
+        
         self.first_mlp_layer = nn.Sequential(
             LayerNorm(channels),
             nn.Linear(channels, dim_feedforward),
@@ -95,9 +96,12 @@ class TempModule(nn.Module):
         h_att = self.temporal_encoder(query=q,key=k,value=v)[0]
         h = v + self.dropout(h_att)
         h_mlp = h + self.first_mlp_layer(h)
+        h_mlp = self.layer_norm(h_mlp)
+
         h_mlp = h_mlp + v
         h_mlp = h_mlp.permute(0, 3, 1, 2) # from (B, T, N, F) to (B, F, T, N)
         res = self.final_norm(h_mlp).permute(0, 2, 3, 1) # from (B, F, T, N) to (B, T, N, F)
+        
         return res
 
 class AttentionEncoded(nn.Module):
