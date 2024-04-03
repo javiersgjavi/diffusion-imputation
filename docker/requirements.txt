@@ -11,3 +11,4 @@ diffusers==0.26.3
 torchcde==0.2.5
 mamba-ssm==1.2.0.post1
 causal-conv1d>=1.2.0
+torchinfo==1.8.0
