@@ -7,6 +7,7 @@ from torchinfo import summary
 from src.models.tgnn_bi_hardcoded import BiModel
 from src.models.pristi import PriSTI
 from src.models.pristi_o import PriSTIO
+from src.models.dtigre import DTigre
 
 from src.models.data_handlers import RandomStack, SchedulerPriSTI, create_interpolation, redefine_eval_mask
     
@@ -22,7 +23,7 @@ class DiffusionImputer(Imputer):
         self.masked_mae = torch_metrics.MaskedMAE()
         self.t_sampler = RandomStack(self.num_T)
         self.loss_fn = torch_metrics.MaskedMSE()
-        self.model = PriSTI()
+        self.model = DTigre()
         
         self.scheduler = SchedulerPriSTI(
             num_train_timesteps=self.num_T,
@@ -69,19 +70,14 @@ class DiffusionImputer(Imputer):
         num_eval = mask_ta.sum()
         loss = (residual ** 2).sum() / (num_eval if num_eval > 0 else 1)
 
-        return loss
+        return self.loss_fn(noise, noise_pred, mask_ta)
 
     def training_step(self, batch, batch_idx):
-        batch = create_interpolation(batch)
-        batch = redefine_eval_mask(batch)
-
         loss = self.calculate_loss(batch)
         self.log_loss('train', loss, batch_size=batch.batch_size)
-
         return loss
     
     def validation_step(self, batch, batch_idx):
-        batch = create_interpolation(batch)
 
         loss = torch.zeros(1).to(batch.x.device)
         for t in range(self.num_T):
@@ -92,7 +88,6 @@ class DiffusionImputer(Imputer):
         self.log_loss('val', loss, batch_size=batch.batch_size)
 
     def test_step(self, batch, batch_idx):
-        batch = create_interpolation(batch)
         x_t_list = []
 
         for _ in range(100):
@@ -135,4 +130,15 @@ class DiffusionImputer(Imputer):
             **kwargs
         )
 
+    def on_train_batch_start(self, batch, batch_idx: int) -> None:
+        super().on_train_batch_start(batch, batch_idx)
+        batch = create_interpolation(batch)
+        batch = redefine_eval_mask(batch)
 
+    def on_validation_batch_start(self, batch, batch_idx: int) -> None:
+        super().on_validation_batch_start(batch, batch_idx)
+        batch = create_interpolation(batch)
+
+    def on_test_batch_start(self, batch, batch_idx: int) -> None:
+        super().on_test_batch_start(batch, batch_idx)
+        batch = create_interpolation(batch)
