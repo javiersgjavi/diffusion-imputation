@@ -6,7 +6,7 @@ from tsl.nn.layers import GraphConv, MultiHeadAttention, DiffConv, AdaptiveGraph
 from src.utils import init_weights_xavier, init_weights_kaiming
 from src.models.gcn import AdaptiveGCN
 
-from src.models.layers import TransformerTime, AttentionEncoded, MambaTime, Conv2DCustom
+from src.models.layers import TransformerTime, AttentionEncoded, MambaTime, Conv2DCustom, MambaNode
 from einops.layers.torch import Rearrange
 
 class SideInfo(nn.Module):
@@ -77,10 +77,7 @@ class TempModule(nn.Module):
     def __init__(self, channels, heads, is_pri=False):
         super().__init__()
 
-        #if is_pri:
         self.layer = MambaTime(channels)
-        #else:
-            #self.layer = TransformerTime(channels, heads=heads)
         
         self.group_norm = nn.Sequential(
             Rearrange('b t n f -> b f t n'),
@@ -176,7 +173,6 @@ class CFEM(nn.Module):
 
         h_prior = self.mlp(h_final) + h_final
         return self.norm(h_prior)
-    
 
 class NEM(nn.Module):
     '''Noise Estimation Module from priSTI'''
@@ -241,7 +237,6 @@ class DTigre(nn.Module):
             nn.ReLU(),
             Conv2DCustom(channels, 1, reorder_in=False)
         )
-
 
         self.support = torch.load('support.pt') # Esto debería de eliminarlo
         self.support[0] = self.support[0]

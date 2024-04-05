@@ -11,13 +11,14 @@ from src.utils import init_weights_xavier, init_weights_kaiming
 from einops.layers.torch import Rearrange
 
 class CustomMamba(nn.Module):
-    def __init__(self, channels, axis='time'):
+    def __init__(self, channels, axis='time', dropout=0.1, is_pri=False):
         super().__init__()
-        print(channels)
+
         self.mamba = Mamba(
             d_model=channels,
         )
-
+        self.dropout = nn.Dropout(dropout)
+        
         if axis == 'time':
             shape = '(b n) t f'
         elif axis == 'nodes':
@@ -26,31 +27,27 @@ class CustomMamba(nn.Module):
         self._in_pattern = f'b t n f -> {shape}'
         self._out_pattern = f'{shape} -> b t n f'
 
-    def forward(self, x):
-        b = x.shape[0]
-        x = rearrange(x, self._in_pattern)
-        x = self.mamba(x)
-        return rearrange(x, self._out_pattern, b=b)
-
-
-class MambaTime(nn.Module):
-    def __init__(self, channels, dropout=0.1, is_pri=False, axis='time'):
-        super().__init__()
-
-        self.mamba = nn.Sequential(
-            CustomMamba(channels, axis),
-            nn.Dropout(dropout),
-        )
-
         if not is_pri:
-            self.layer_norm = LayerNorm(channels)
-        
-    def forward(self, v, qk=None):
+            self.info_mixer = nn.Linear(channels*2, channels).apply(init_weights_xavier)
+
+    def forward(self, x, qk=None):
+        b = x.shape[0]
         if qk is not None:
-            v += qk
-            v = self.layer_norm(v)
-        return self.mamba(v)
-    
+            x = torch.cat([x, qk], dim=-1)
+            x = self.info_mixer(x)
+
+        x = rearrange(x, self._in_pattern, b=b)
+        x = self.mamba(x)
+        x = rearrange(x, self._out_pattern, b=b)
+        return self.dropout(x)
+
+class MambaTime(CustomMamba):
+    def __init__(self, *args, **kwargs):
+        super().__init__(axis='time',*args, **kwargs)
+
+class MambaNode(CustomMamba):
+    def __init__(self, *args, **kwargs):
+        super().__init__(axis='nodes',*args, **kwargs)
 
 class TransformerTime(nn.Module):
     def __init__(self, channels, heads, dim_feedforward=64, dropout=0.1):
@@ -68,6 +65,7 @@ class TransformerTime(nn.Module):
         ).apply(init_weights_xavier)
 
     def forward(self, v, qk=None):
+        # Esto está mal implementado, las capas mlp no sirven para nada, el temporal encoder ya lo hace todo
         if qk is None:
             qk = v
         h_att = self.temporal_encoder(query=qk,key=qk,value=v)[0]

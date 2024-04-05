@@ -66,10 +66,6 @@ class DiffusionImputer(Imputer):
 
         noise_pred  = self.model(x_ta_t, cond_info['x_co'], cond_info['u'], t, edge_index, edge_weight)
 
-        residual = (noise - noise_pred) * mask_ta
-        num_eval = mask_ta.sum()
-        loss = (residual ** 2).sum() / (num_eval if num_eval > 0 else 1)
-
         return self.loss_fn(noise, noise_pred, mask_ta)
 
     def training_step(self, batch, batch_idx):
