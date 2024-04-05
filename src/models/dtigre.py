@@ -1,11 +1,13 @@
 import torch
 from torch import nn
+from einops import rearrange
 
 from tsl.nn.layers import GraphConv, MultiHeadAttention, DiffConv, AdaptiveGraphConv, NodeEmbedding
 from src.utils import init_weights_xavier, init_weights_kaiming
 from src.models.gcn import AdaptiveGCN
 
-from src.models.layers import TransformerTime, AttentionEncoded, MambaTime
+from src.models.layers import TransformerTime, AttentionEncoded, MambaTime, Conv2DCustom
+from einops.layers.torch import Rearrange
 
 class SideInfo(nn.Module):
     def __init__(self, batch_size, time_steps, num_nodes):
@@ -80,14 +82,15 @@ class TempModule(nn.Module):
         #else:
             #self.layer = TransformerTime(channels, heads=heads)
         
-        self.final_norm = nn.GroupNorm(4, channels).apply(init_weights_xavier)
-
+        self.group_norm = nn.Sequential(
+            Rearrange('b t n f -> b f t n'),
+            nn.GroupNorm(4, channels),
+            Rearrange('b f t n -> b t n f')
+        ).apply(init_weights_xavier)
 
     def forward(self, v , qk=None):
         v = self.layer(v, qk) + v
-        v = v.permute(0, 3, 1, 2) # from (B, T, N, F) to (B, F, T, N)
-        res = self.final_norm(v).permute(0, 2, 3, 1) # from (B, F, T, N) to (B, T, N, F)
-        return res
+        return self.group_norm(v)
 
 class SpaModule(nn.Module):
     def __init__(self, channels, heads, num_nodes=207, is_pri=False):
@@ -97,29 +100,35 @@ class SpaModule(nn.Module):
         self.spatial_encoder = AttentionEncoded(channels, heads)
         self.gcn = AdaptiveGCN(channels)
         
-        self.norm_local = nn.GroupNorm(4, channels).apply(init_weights_xavier)
+        self.norm_local = nn.Sequential(
+            nn.GroupNorm(4, channels),
+            Rearrange('b f (n t) -> b t n f', t=24)
+        ).apply(init_weights_xavier)
 
         if not is_pri:
             self.mlp = nn.Sequential(
-            nn.Linear(channels, channels*2),
-            nn.ReLU(),
-            nn.Linear(channels*2, channels)
+                nn.Linear(channels, channels*2),
+                nn.ReLU(),
+                nn.Linear(channels*2, channels)
             ).apply(init_weights_xavier)
-            self.norm_final = nn.GroupNorm(4, channels).apply(init_weights_xavier)
+
+            self.norm_final = nn.Sequential(
+                Rearrange('b t n f-> b f (t n)'),
+                nn.GroupNorm(4, channels),
+                Rearrange('b f (t n) -> b t n f', t=24)
+                ).apply(init_weights_xavier)
         else:
             self.node_encoder_pri = nn.Conv2d(num_nodes, channels, 1).apply(init_weights_kaiming)
 
     def forward_gcn(self, h, edges, weights, support):
         h_gcn = self.gcn(h, h.shape, support)
-        h_gcn += h.reshape(h.shape[0], h.shape[-1], -1) # from (B, T, N, F) to (B, F, N*T)
-        h_gcn = self.norm_local(h_gcn).view(h.shape) # from (B, F, N*T) to (B, T, N, F)
-        return h_gcn
+        h_gcn += rearrange(h, 'b t n f -> b f (n t)')
+        return self.norm_local(h_gcn)
 
     def forward_mlp(self, h_gcn, h_att):
         h_comb = h_gcn + h_att
         res = self.mlp(h_comb) + h_comb
-        res = res.view(res.shape[0], res.shape[3], -1) # from (B, T, N, F) to (B, F, T * N)
-        return self.norm_final(res).view(h_comb.shape)
+        return self.norm_final(res)
 
     def forward(self, h, edges, weights, h_pri=None, support=None):
         h_gcn = self.forward_gcn(h, edges, weights, support)
@@ -133,8 +142,9 @@ class CFEM(nn.Module):
     def __init__(self, channels, heads, side_info_dim=144):
         super().__init__()
 
-        self.initial_conv = nn.Conv2d(1, channels, 1).apply(init_weights_kaiming) # Creo que es cierto que este al final solo recibe itp
-        self.initial_conv_side_info = nn.Conv2d(side_info_dim, channels, 1).apply(init_weights_kaiming)
+        self.initial_conv = Conv2DCustom(1, channels, reorder_out=False)
+        self.initial_conv_side_info = Conv2DCustom(side_info_dim, channels, reorder_out=False)
+        
         self.spa_module = SpaModule(channels, heads, is_pri=True)
         self.temp_module = TempModule(channels, heads, is_pri=True)
 
@@ -143,14 +153,21 @@ class CFEM(nn.Module):
             nn.ReLU(),
             nn.Linear(channels*2, channels)
         ).apply(init_weights_xavier)
-        self.norm = nn.GroupNorm(4, channels).apply(init_weights_xavier)
+
+        self.norm = nn.Sequential(
+                Rearrange('b t n f-> b f (t n)'),
+                nn.GroupNorm(4, channels),
+                Rearrange('b f (t n) -> b t n f', t=24),
+                nn.ReLU()
+            ).apply(init_weights_xavier)
 
     def forward(self, x, edges, weights, side_info, support):
-        x = self.initial_conv(x.permute(0,3,1,2)) # from (B, T, N, 1) to (B, 1, T, N)
-        side_info = self.initial_conv_side_info(side_info.permute(0,3,1,2)) # from (B, T, N, 1) to (B, 1, T, N)
-        h = x + side_info
-        h = h.permute(0,2,3,1) # from (B, F, T, N) to (B, T, N, F)
 
+        x = self.initial_conv(x)
+        side_info = self.initial_conv_side_info(side_info)
+
+        h = x + side_info
+        h = rearrange(h, 'b f t n -> b t n f')
 
         h_gcn, h_att = self.spa_module(h, edges, weights, support=support)
         h_temp = self.temp_module(h)
@@ -158,9 +175,7 @@ class CFEM(nn.Module):
         h_final = h_temp + h_gcn + h_att
 
         h_prior = self.mlp(h_final) + h_final
-        h_prior = h_prior.view(h_prior.shape[0], h_prior.shape[3], -1) # from (B, T, N, F) to (B, F, T * N)
-        h_prior = self.norm(h_prior).view(h_final.shape) # from (B, F, T * N) to (B, T, N, F)
-        return nn.functional.relu(h_prior)
+        return self.norm(h_prior)
     
 
 class NEM(nn.Module):
@@ -170,62 +185,62 @@ class NEM(nn.Module):
         self.temp_module = TempModule(channels, heads)
         self.spa_module = SpaModule(channels, heads, is_pri=False)
 
-        self.cond_projection = nn.Conv2d(side_info_dim, 2*channels, 1).apply(init_weights_kaiming)
-        self.mid_projection = nn.Conv2d(channels, 2*channels, 1).apply(init_weights_kaiming)
-        self.output_projection = nn.Conv2d(channels, 2*channels, 1).apply(init_weights_kaiming)
+        self.cond_projection = Conv2DCustom(side_info_dim, 2*channels, reorder_out=False)
+        self.mid_projection = Conv2DCustom(channels, 2*channels, reorder_out=False)
+        self.output_projection = Conv2DCustom(channels, 2*channels, reorder_in=False)
         self.t_emb_compresser = nn.Linear(t_emb_size, channels).apply(init_weights_xavier)
-        
+
+        self.sqrt_two = torch.sqrt(torch.tensor(2.0))
 
     def forward(self, h_in, h_pri, t_pos, side_info, edges, weights, support):
 
-        t_pos_com = self.t_emb_compresser(t_pos) # Esto se queda en PriSTI (B, channels, 1)
+        t_pos_com = self.t_emb_compresser(t_pos)
         h_in_pos = h_in + t_pos_com
 
         h_tem = self.temp_module(qk=h_pri, v=h_in_pos)
-        h_spa = self.spa_module(h_tem, edges, weights, h_pri, support=support) # Esto se queda en PriSTI (B, T, N, F)
-        h_spa = h_spa.permute(0, 3, 1, 2) # from (B, T, N, F) to (B, F, T, N)
+        h_spa = self.spa_module(h_tem, edges, weights, h_pri, support=support) # (B, T, N, F)
         h = self.mid_projection(h_spa) # (B, 2*F, T, N)
 
-        h_side_info = self.cond_projection(side_info.permute(0, 3, 1, 2)) # (B, 2*F, T, N)
+        h_side_info = self.cond_projection(side_info) # (B, 2*F, T, N)
         h += h_side_info # (B, 2*F, T, N)
-        #h = h.permute(0, 2, 3, 1) # from (B, 2*F, T, N) to (B, T, N, 2*F)
 
-        # aquí empieza aplicar multiples gates
+        # Gates
         gate, filter_gate = torch.chunk(h, 2, dim=1)
         y = torch.sigmoid(gate) * torch.tanh(filter_gate)
-        #y = y.permute(0, 3, 1, 2) # from (B, T, N, F) to (B, F, T, N)
-        y = self.output_projection(y) # (B, 2*F, T, N)
-        #y = y.permute(0, 2, 3, 1) # from (B, 2*F, T, N) to (B, T, N, 2*F)
+        y = self.output_projection(y) # (B, T, N, 2*F)
 
-        residual, skip = torch.chunk(y, 2, dim=1)
-        residual = residual.permute(0, 2, 3, 1) # from (B, F, T, N) to (B, T, N, F)
-        skip = skip.permute(0, 2, 3, 1) # from (B, F, T, N) to (B, T, N, F)
-        two = torch.tensor(2.0).to(residual.device)
-        residual = (h_in + residual)/torch.sqrt(two)
+        residual, skip = torch.chunk(y, 2, dim=-1) # residual: (B, T, N, F), skip: (B, T, N, F)
+        
+        residual = (h_in + residual)/self.sqrt_two
 
         return residual, skip
     
 class DTigre(nn.Module):
     def __init__(self, channels=64, heads=8, t_emb_size=128):
         super().__init__()
+
         self.side_info = SideInfo(
             batch_size=4, 
             time_steps=24, 
             num_nodes=207)
+        
         self.t_encoder = TEncoder(t_emb_size)
         self.cfem = CFEM(channels, heads)
 
         self.input_projection = nn.Sequential(
-            nn.Conv2d(2, channels, 1),
+            Conv2DCustom(2, channels),
             nn.ReLU()
-        ).apply(init_weights_kaiming)
+        )
 
-        self.nem_layers = nn.ModuleList([NEM(channels, heads, t_emb_size) for _ in range(4)])
+        self.nem_layers = nn.ModuleList([
+            NEM(channels, heads, t_emb_size) for _ in range(4)
+            ])
+
         self.out = nn.Sequential(
-            nn.Conv2d(channels, channels, 1),
+            Conv2DCustom(channels, channels, reorder_out=False),
             nn.ReLU(),
-            nn.Conv2d(channels, 1, 1)
-        ).apply(init_weights_kaiming)
+            Conv2DCustom(channels, 1, reorder_in=False)
+        )
 
 
         self.support = torch.load('support.pt') # Esto debería de eliminarlo
@@ -241,13 +256,14 @@ class DTigre(nn.Module):
 
         #mask = cond_info['mask_co']
         h_in = torch.cat([x_ta_t, x_co], dim=-1) # (B, T, N, 2)
-        h_in = h_in.permute(0, 3, 1, 2) # from (B, T, N, 2) to (B, 2, T, N)
-        h_in = self.input_projection(h_in).permute(0, 2, 3, 1) # from (B, 2, T, N) to (B, T, N, F)
+        h_in = self.input_projection(h_in)
         
         h_pri = self.cfem(x_co, edges, weights, side_info, self.support)
 
         t = t.unsqueeze(-1).type(torch.float)
-        t_pos = self.t_encoder(t).unsqueeze(1).unsqueeze(1).repeat((1, h_in.shape[1], h_in.shape[2], 1)) # Resample t to (B, T, N, F)
+        
+        t_pos = self.t_encoder(t)
+        t_pos = rearrange(t_pos, 'b f -> b 1 1 f').repeat((1, h_in.shape[1], h_in.shape[2], 1)) # Resample t to (B, T, N, F)
 
         skip_connections = []
         for nem in self.nem_layers:
@@ -258,8 +274,5 @@ class DTigre(nn.Module):
         len_layers = torch.tensor(len(self.nem_layers)).to(res.device)
         res = torch.sum(res, dim=0) / torch.sqrt(len_layers)
 
-        res = res.permute(0, 3, 1, 2) # from (B, T, N, F) to (B, F, T, N)
-        res = self.out(res) # (B, 1, T, N)
-        res = res.permute(0, 2, 3, 1) # from (B, 1, T, N) to (B, T, N, 1)
-        return res
+        return self.out(res)
     

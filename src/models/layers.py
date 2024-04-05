@@ -8,6 +8,8 @@ from tsl.nn.layers.norm import LayerNorm
 from einops import rearrange
 from src.utils import init_weights_xavier, init_weights_kaiming
 
+from einops.layers.torch import Rearrange
+
 class CustomMamba(nn.Module):
     def __init__(self, channels, axis='time'):
         super().__init__()
@@ -34,8 +36,11 @@ class CustomMamba(nn.Module):
 class MambaTime(nn.Module):
     def __init__(self, channels, dropout=0.1, is_pri=False, axis='time'):
         super().__init__()
-        self.mamba = CustomMamba(channels, axis)
-        self.dropout = nn.Dropout(dropout)
+
+        self.mamba = nn.Sequential(
+            CustomMamba(channels, axis),
+            nn.Dropout(dropout),
+        )
 
         if not is_pri:
             self.layer_norm = LayerNorm(channels)
@@ -44,10 +49,9 @@ class MambaTime(nn.Module):
         if qk is not None:
             v += qk
             v = self.layer_norm(v)
-
-        h = self.mamba(v)
-        return self.dropout(h)
+        return self.mamba(v)
     
+
 class TransformerTime(nn.Module):
     def __init__(self, channels, heads, dim_feedforward=64, dropout=0.1):
         super().__init__()
@@ -105,3 +109,16 @@ class AttentionEncoded(nn.Module):
         h_att = h_att.reshape(h.shape[0], h.shape[3], -1) # from (B, T, N, F) to (B, F, N*T)
         h_att = self.norm_attn(h_att).view(h.shape) # from (B, F, N*T) to (B, T, N, F)
         return h_att
+    
+class Conv2DCustom(nn.Module):
+    def __init__(self, in_channels, out_channels, reorder_out=True, reorder_in=True):
+        super().__init__()
+
+        self.layers = nn.Sequential(
+            Rearrange('b t n f -> b f t n') if reorder_in else nn.Identity(),
+            nn.Conv2d(in_channels, out_channels, 1),
+            Rearrange('b f t n -> b t n f') if reorder_out else nn.Identity()
+        ).apply(init_weights_kaiming)
+
+    def forward(self, x):
+        return self.layers(x)
