@@ -9,10 +9,13 @@ from einops import rearrange
 from src.utils import init_weights_xavier, init_weights_kaiming
 
 from einops.layers.torch import Rearrange
+from VMamba.classification.models.vmamba import VSSBlock
 
 class CustomMamba(nn.Module):
     def __init__(self, channels, axis='time', dropout=0.1, is_pri=False):
         super().__init__()
+
+        self.axis = axis
 
         self.mamba = Mamba(
             d_model=channels,
@@ -22,10 +25,13 @@ class CustomMamba(nn.Module):
         if axis == 'time':
             shape = '(b n) t f'
         elif axis == 'nodes':
-            shape = '(b t) n f'
+            shape = 'b (t n) f'
 
         self._in_pattern = f'b t n f -> {shape}'
         self._out_pattern = f'{shape} -> b t n f'
+
+        if axis == 'nodes':
+            self.layer_norm = LayerNorm(channels)
 
         if not is_pri:
             self.info_mixer = nn.Linear(channels*2, channels).apply(init_weights_xavier)
@@ -36,18 +42,40 @@ class CustomMamba(nn.Module):
             x = torch.cat([x, qk], dim=-1)
             x = self.info_mixer(x)
 
-        x = rearrange(x, self._in_pattern, b=b)
+        x = rearrange(x, self._in_pattern, b=b, t=24)
+        if self.axis == 'nodes':
+            x = self.layer_norm(x)
         x = self.mamba(x)
-        x = rearrange(x, self._out_pattern, b=b)
+        x = rearrange(x, self._out_pattern, b=b, t=24)
         return self.dropout(x)
 
 class MambaTime(CustomMamba):
     def __init__(self, *args, **kwargs):
         super().__init__(axis='time',*args, **kwargs)
 
-class MambaNode(CustomMamba):
-    def __init__(self, *args, **kwargs):
-        super().__init__(axis='nodes',*args, **kwargs)
+class MambaNode(nn.Module):
+    def __init__(self, channels, dropout=0.1, is_pri=False):
+        super().__init__()
+
+        self.vmamba = VSSBlock(hidden_dim=channels//2, forward_type='v0')
+        self.dropout = nn.Dropout(dropout)
+
+        if is_pri:
+            self.input_layer = nn.Linear(channels, channels//2).apply(init_weights_xavier)
+        else:
+            self.info_mixer = nn.Linear(channels*2, channels//2).apply(init_weights_xavier)
+        
+        self.output = nn.Linear(channels//2, channels).apply(init_weights_xavier)
+
+    def forward(self, x, qk=None):
+        if qk is not None:
+            x = torch.cat([x, qk], dim=-1)
+            x = self.info_mixer(x)
+        else:
+            x = self.input_layer(x)
+
+        x = self.vmamba(x)
+        return self.output(self.dropout(x))
 
 class TransformerTime(nn.Module):
     def __init__(self, channels, heads, dim_feedforward=64, dropout=0.1):

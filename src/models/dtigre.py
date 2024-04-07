@@ -179,7 +179,7 @@ class NEM(nn.Module):
     def __init__(self, channels, heads, t_emb_size, side_info_dim=144):
         super().__init__()
         self.temp_module = TempModule(channels, heads)
-        self.spa_module = SpaModule(channels, heads, is_pri=False)
+        self.spa_module = SpaModule(channels, heads)
 
         self.cond_projection = Conv2DCustom(side_info_dim, 2*channels, reorder_out=False)
         self.mid_projection = Conv2DCustom(channels, 2*channels, reorder_out=False)
