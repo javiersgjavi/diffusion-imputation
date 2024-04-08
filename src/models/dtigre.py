@@ -77,7 +77,7 @@ class TempModule(nn.Module):
     def __init__(self, channels, heads, is_pri=False):
         super().__init__()
 
-        self.layer = MambaTime(channels)
+        self.layer = MambaTime(channels, is_pri=is_pri)
         
         self.group_norm = nn.Sequential(
             Rearrange('b t n f -> b f t n'),

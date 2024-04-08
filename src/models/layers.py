@@ -11,6 +11,54 @@ from src.utils import init_weights_xavier, init_weights_kaiming
 from einops.layers.torch import Rearrange
 from VMamba.classification.models.vmamba import VSSBlock
 
+class CustomMambaDualScan(nn.Module):
+    def __init__(self, channels, axis='time', dropout=0.1, is_pri=False):
+        super().__init__()
+
+        print(is_pri)
+        input_size = 2*channels if not is_pri else channels
+        reducted_size = channels//2
+
+        self.input_layer = nn.Linear(input_size, reducted_size).apply(init_weights_xavier)
+        self.mamba_fw = Mamba(
+            d_model=reducted_size,
+        )
+
+        self.mamba_bw = Mamba(
+            d_model=reducted_size,
+        )
+
+        self.layer_norm = LayerNorm(reducted_size)
+        self.output = nn.Linear(reducted_size, channels).apply(init_weights_xavier)
+        self.dropout = nn.Dropout(dropout)
+        
+
+        shape = '(b n) t f'
+
+        self._in_pattern = f'b t n f -> {shape}'
+        self._out_pattern = f'{shape} -> b t n f'
+
+    def forward(self, x, qk=None):
+        b, t, n, f = x.shape
+        if qk is not None:
+            x = torch.cat([x, qk], dim=-1)
+
+        x = self.input_layer(x)
+        x = rearrange(x, self._in_pattern, b=b, t=t)
+
+        x_fw = self.mamba_fw(x)
+        x_bw = self.mamba_bw(x.flip(1)).flip(1)
+
+        x = x_fw + x_bw
+
+        x = rearrange(x, self._out_pattern, b=b, t=t)
+
+        x = self.layer_norm(x)
+
+        x = self.output(x)
+
+        return self.dropout(x)
+
 class CustomMamba(nn.Module):
     def __init__(self, channels, axis='time', dropout=0.1, is_pri=False):
         super().__init__()
@@ -49,7 +97,7 @@ class CustomMamba(nn.Module):
         x = rearrange(x, self._out_pattern, b=b, t=24)
         return self.dropout(x)
 
-class MambaTime(CustomMamba):
+class MambaTime(CustomMambaDualScan):
     def __init__(self, *args, **kwargs):
         super().__init__(axis='time',*args, **kwargs)
 
