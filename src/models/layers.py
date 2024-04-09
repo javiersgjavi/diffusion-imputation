@@ -28,8 +28,12 @@ class CustomMambaDualScan(nn.Module):
             d_model=reducted_size,
         )
 
-        self.layer_norm = LayerNorm(reducted_size)
-        self.output = nn.Linear(reducted_size, channels).apply(init_weights_xavier)
+        self.layer_norm_b = LayerNorm(reducted_size)
+        self.layer_norm_f = LayerNorm(reducted_size)
+        #self.layer_norm_final = LayerNorm(channels)
+        self.gating_f = nn.Linear(reducted_size, channels*2).apply(init_weights_xavier)
+        self.gating_b = nn.Linear(reducted_size, channels*2).apply(init_weights_xavier)
+
         self.dropout = nn.Dropout(dropout)
         
 
@@ -38,26 +42,38 @@ class CustomMambaDualScan(nn.Module):
         self._in_pattern = f'b t n f -> {shape}'
         self._out_pattern = f'{shape} -> b t n f'
 
+    def gating(self, x, layer):
+        h = layer(x)
+        gate, filter = torch.chunk(h, 2, dim=-1)
+        return torch.sigmoid(gate) * filter
+
+    def gating_forward(self, x):
+        return self.gating(x, self.gating_f)
+
+    def gating_backward(self, x):
+        return self.gating(x, self.gating_b)
+    
     def forward(self, x, qk=None):
         b, t, n, f = x.shape
         if qk is not None:
             x = torch.cat([x, qk], dim=-1)
 
-        x = self.input_layer(x)
         x = rearrange(x, self._in_pattern, b=b, t=t)
+        x = self.input_layer(x)
 
-        x_fw = self.mamba_fw(x)
-        x_bw = self.mamba_bw(x.flip(1)).flip(1)
+        x_fw = self.layer_norm_f(self.mamba_fw(x))
+        x_bw = self.layer_norm_b(self.mamba_bw(x.flip(1)).flip(1))
 
-        x = x_fw + x_bw
+        x_fw_gated = self.gating_forward(x_fw)
+        x_bw_gated = self.gating_backward(x_bw)
+
+        x = x_fw_gated + x_bw_gated
+
+        x = self.dropout(x)
 
         x = rearrange(x, self._out_pattern, b=b, t=t)
 
-        x = self.layer_norm(x)
-
-        x = self.output(x)
-
-        return self.dropout(x)
+        return x
 
 class CustomMamba(nn.Module):
     def __init__(self, channels, axis='time', dropout=0.1, is_pri=False):
