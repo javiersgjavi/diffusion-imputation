@@ -10,7 +10,9 @@ from src.models.pristi_o import PriSTIO
 from src.models.dtigre import DTigre
 
 from src.models.data_handlers import RandomStack, SchedulerPriSTI, create_interpolation, redefine_eval_mask
-    
+
+import schedulefree
+
 class DiffusionImputer(Imputer):
     def __init__(self, scheduler_type='scaled_linear', *args, **kwargs):
         kwargs['metrics'] = {
@@ -82,6 +84,7 @@ class DiffusionImputer(Imputer):
 
         loss /= self.num_T
         self.log_loss('val', loss, batch_size=batch.batch_size)
+        return loss
 
     def test_step(self, batch, batch_idx):
         x_t_list = []
@@ -96,14 +99,18 @@ class DiffusionImputer(Imputer):
         self.test_metrics.update(x_t, batch.y, batch.eval_mask)
         self.log_metrics(self.test_metrics, batch_size=batch.batch_size)
 
-    def configure_optimizers(self):
+    '''def configure_optimizers(self):
         optim = torch.optim.Adam(self.model.parameters(), lr=1e-3, weight_decay=1e-6)
         #scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, T_max=1000)
         p1 = int(0.75 * 50)
         p2 = int(0.9 * 50)
         scheduler = torch.optim.lr_scheduler.MultiStepLR(optim, milestones=[p1, p2], gamma=0.1)
         return [optim], [scheduler]
-        #return optim
+        #return optim'''
+    
+    def configure_optimizers(self):
+        optim = schedulefree.AdamWScheduleFree(self.model.parameters(), lr=0.0025, weight_decay=1e-6, warmup_steps=25000)
+        return optim
     
     def log_metrics(self, metrics, **kwargs):
         self.log_dict(
@@ -138,3 +145,15 @@ class DiffusionImputer(Imputer):
     def on_test_batch_start(self, batch, batch_idx: int) -> None:
         super().on_test_batch_start(batch, batch_idx)
         batch = create_interpolation(batch)
+
+    def on_train_epoch_start(self) -> None:
+        self.optimizers().train()
+        return super().on_train_epoch_start()
+
+    def on_validation_epoch_start(self) -> None:
+        self.optimizers().eval()
+        return super().on_validation_epoch_start()
+
+    def on_test_epoch_start(self) -> None:
+        self.optimizers().eval()
+        return super().on_test_epoch_start()
