@@ -1,6 +1,7 @@
 from torch import nn
 import torch
 import math
+from torchinfo import summary
 
 from tsl.nn.blocks.encoders import TemporalConvNet, SpatioTemporalConvNet, Transformer, SpatioTemporalTransformerLayer
 from tsl.nn.blocks.encoders.recurrent import RNN, GraphConvRNN#, MultiRNN
@@ -139,7 +140,6 @@ def define_mlp_decoder(mlp_params):
 
     decoder_mlp.apply(init_weights_xavier)
 
-
 def _init_weights_mamba(
     module,
     n_layer=1,
@@ -170,3 +170,13 @@ def _init_weights_mamba(
                 nn.init.kaiming_uniform_(p, a=math.sqrt(5))
                 with torch.no_grad():
                     p /= math.sqrt(n_residuals_per_layer * n_layer)
+
+
+def print_summary_model(model, depth=2):
+    summary(
+            model,
+            input_size=[(4, 24, 207, 1), (4, 24, 207, 1), (4, 24, 207, 2), (4,), (2, 1515), (1515,)],
+            dtypes=[torch.float32, torch.float32, torch.float32, torch.int64, torch.int64, torch.float32],
+            col_names=['input_size', 'output_size', 'num_params'],
+            depth=depth
+            )

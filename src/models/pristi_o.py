@@ -7,7 +7,7 @@ class SideInfo(nn.Module):
         super().__init__()
         self.embed_layer = nn.Embedding(num_embeddings=207, embedding_dim=16)
 
-        self.arange = torch.arange(207)#.to('cuda:2')
+        self.arange = torch.arange(207)
     
     def get_time(self, B):
         observed_tp = torch.arange(24).unsqueeze(0)
@@ -36,23 +36,13 @@ class SideInfo(nn.Module):
         return side_info.to(cond_mask.device)
 
 class PriSTIO(nn.Module):
-    def __init__(self, inputdim=2, target_dim=207, is_itp=True):
+    def __init__(self, inputdim=2, is_itp=True, config=None):
         super().__init__()
-        config = {
-            'layers': 4,
-            'channels': 64, 
-            'nheads': 8, 
-            'diffusion_embedding_dim': 128, 
-            'schedule': 'quad', 
-            'is_adp': True, 
-            'proj_t': 64, 
-            'is_cross_t': True, 
-            'is_cross_s': True, 
-            'adj_file': 'metr-la', 
-            'side_dim': 144,
-            'device': 'cpu',#'cuda:2',
-            'num_steps': 50}
 
+        print(config)
+        
+        config['device'] = None
+        target_dim = config['nodes']
         self.side_info = SideInfo()
         self.channels = config["channels"]
         self.is_itp = is_itp

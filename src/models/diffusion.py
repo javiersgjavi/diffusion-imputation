@@ -1,8 +1,8 @@
 import torch
 from tqdm import tqdm
+from contextlib import nullcontext
 from tsl.engines.imputer import Imputer
 from tsl.metrics import torch as torch_metrics
-from torchinfo import summary
 
 from src.models.tgnn_bi_hardcoded import BiModel
 from src.models.pristi import PriSTI
@@ -11,36 +11,31 @@ from src.models.pristi_oo import PriSTIOO
 from src.models.dtigre import DTigre
 
 from src.models.data_handlers import RandomStack, SchedulerPriSTI, create_interpolation, redefine_eval_mask
-    
+
+from schedulefree import AdamWScheduleFree
+from torch_ema import ExponentialMovingAverage
+
+from src.utils import print_summary_model
+
+
 class DiffusionImputer(Imputer):
-    def __init__(self, scheduler_type='scaled_linear', *args, **kwargs):
-        kwargs['metrics'] = {
-            'mae': torch_metrics.MaskedMAE(),
-            'mse': torch_metrics.MaskedMSE(),
-            'mre': torch_metrics.MaskedMRE()
-        }
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.num_T = 50
+
         self.masked_mae = torch_metrics.MaskedMAE()
-        self.t_sampler = RandomStack(self.num_T)
         self.loss_fn = torch_metrics.MaskedMSE()
-        self.model = PriSTIO()
         
-        self.scheduler = SchedulerPriSTI(
-            num_train_timesteps=self.num_T,
-            beta_schedule=scheduler_type,
-            beta_start=0.0001,
-            beta_end=0.2,
-            clip_sample=False,
-        )
-        
-        summary(
-            self.model,
-            input_size=[(4, 24, 207, 1), (4, 24, 207, 1), (4, 24, 207, 2), (4,), (2, 1515), (1515,)],
-            dtypes=[torch.float32, torch.float32, torch.float32, torch.int64, torch.int64, torch.float32],
-            col_names=['input_size', 'output_size', 'num_params'],
-            depth=3
-            )
+        self.t_sampler = RandomStack(self.num_T)
+        self.scheduler = SchedulerPriSTI(**scheduler_kwargs)
+
+        model_hyperparams = self.model_kwargs.pop('config')
+        model_hyperparams['num_steps'] = self.num_T
+        self.model = PriSTIO(config = model_hyperparams)
+
+        self.use_ema = self.model_kwargs['use_ema']
+        self.ema = ExponentialMovingAverage(self.parameters(), decay=self.model_kwargs['decay']) if self.use_ema else None
+
+        print_summary_model(self.model)
         
     def get_imputation(self, batch):
         mask_co = batch.mask
@@ -75,14 +70,15 @@ class DiffusionImputer(Imputer):
         return loss
     
     def validation_step(self, batch, batch_idx):
-
-        loss = torch.zeros(1).to(batch.x.device)
-        for t in range(self.num_T):
-            t = (torch.ones(batch.x.shape[0]) * t).to(batch.x.device)
-            loss += self.calculate_loss(batch, t)
+        with self.ema.average_parameters() if self.use_ema else nullcontext():
+            loss = torch.zeros(1).to(batch.x.device)
+            for t in range(self.num_T):
+                t = (torch.ones(batch.x.shape[0]) * t).to(batch.x.device)
+                loss += self.calculate_loss(batch, t)
 
         loss /= self.num_T
         self.log_loss('val', loss, batch_size=batch.batch_size)
+        return loss
 
     def test_step(self, batch, batch_idx):
         x_t_list = []
@@ -96,15 +92,6 @@ class DiffusionImputer(Imputer):
         
         self.test_metrics.update(x_t, batch.y, batch.eval_mask)
         self.log_metrics(self.test_metrics, batch_size=batch.batch_size)
-
-    def configure_optimizers(self):
-        optim = torch.optim.Adam(self.model.parameters(), lr=1e-3, weight_decay=1e-6)
-        #scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, T_max=1000)
-        p1 = int(0.75 * 50)
-        p2 = int(0.9 * 50)
-        scheduler = torch.optim.lr_scheduler.MultiStepLR(optim, milestones=[p1, p2], gamma=0.1)
-        return [optim], [scheduler]
-        #return optim
     
     def log_metrics(self, metrics, **kwargs):
         self.log_dict(
@@ -139,3 +126,30 @@ class DiffusionImputer(Imputer):
     def on_test_batch_start(self, batch, batch_idx: int) -> None:
         super().on_test_batch_start(batch, batch_idx)
         batch = create_interpolation(batch)
+
+    def on_train_epoch_start(self) -> None:
+        super().on_train_epoch_start()
+        if self.optim_class == AdamWScheduleFree:
+            self.optimizers().train()
+
+        if self.use_ema:
+            if self.ema.shadow_params[0].device != self.device:
+                self.ema.to(self.device)
+
+    def on_train_batch_end(self, *args, **kwargs)-> None:
+        super().on_train_batch_end(*args, **kwargs)
+        if self.use_ema:
+            self.ema.update()
+
+    def on_validation_epoch_start(self) -> None:
+        super().on_validation_epoch_start()
+        if self.optim_class == AdamWScheduleFree:
+            self.optimizers().eval()
+
+    def on_test_epoch_start(self) -> None:
+        super().on_test_epoch_start()
+        if self.optim_class == AdamWScheduleFree:
+            self.optimizers().eval()
+
+    def parameters(self):
+        return self.model.parameters()
