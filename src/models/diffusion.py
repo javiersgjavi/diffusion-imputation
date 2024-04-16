@@ -7,6 +7,7 @@ from tsl.metrics import torch as torch_metrics
 from src.models.tgnn_bi_hardcoded import BiModel
 from src.models.pristi import PriSTI
 from src.models.pristi_o import PriSTIO
+from src.models.pristi_oo import PriSTIOO
 from src.models.dtigre import DTigre
 
 from src.models.data_handlers import RandomStack, SchedulerPriSTI, create_interpolation, redefine_eval_mask
@@ -23,9 +24,6 @@ class DiffusionImputer(Imputer):
 
         self.masked_mae = torch_metrics.MaskedMAE()
         self.loss_fn = torch_metrics.MaskedMSE()
-
-        scheduler_kwargs = kwargs['model_kwargs'].pop('scheduler_kwargs')
-        self.num_T = scheduler_kwargs['num_train_timesteps']
         
         self.t_sampler = RandomStack(self.num_T)
         self.scheduler = SchedulerPriSTI(**scheduler_kwargs)
@@ -38,7 +36,6 @@ class DiffusionImputer(Imputer):
         self.ema = ExponentialMovingAverage(self.parameters(), decay=self.model_kwargs['decay']) if self.use_ema else None
 
         print_summary_model(self.model)
-        
         
     def get_imputation(self, batch):
         mask_co = batch.mask
@@ -99,7 +96,7 @@ class DiffusionImputer(Imputer):
     def log_metrics(self, metrics, **kwargs):
         self.log_dict(
             metrics,
-            on_step=True,
+            on_step=False,
             on_epoch=True,
             logger=True,
             prog_bar=False,
@@ -110,7 +107,7 @@ class DiffusionImputer(Imputer):
         self.log(
             name + '_loss',
             loss.detach(),
-            on_step=True,
+            on_step=False,
             on_epoch=True,
             logger=True,
             prog_bar=True,

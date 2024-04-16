@@ -6,122 +6,167 @@ from tsl.nn.layers import MultiHeadAttention
 from tsl.nn.layers.norm import LayerNorm
 
 from einops import rearrange
-from src.utils import init_weights_xavier, init_weights_kaiming
+from src.utils import init_weights_xavier, init_weights_kaiming, _init_weights_mamba
 
 from einops.layers.torch import Rearrange
-from VMamba.classification.models.vmamba import VSSBlock
+# from VMamba.classification.models.vmamba import VSSBlock
 
-class CustomMambaDualScan(nn.Module):
+from Vim.mamba.mamba_ssm.modules.mamba_simple import Mamba as BiMamba
+
+class CustomBiMamba(nn.Module):
     def __init__(self, channels, axis='time', dropout=0.1, is_pri=False):
         super().__init__()
 
-        print(is_pri)
+        self._in_pattern = f'b t n f -> (b n) t f'
+        self._out_pattern = f'(b n) t f -> b t n f'
+
+        # input_size = 2*channels if not is_pri else channels
+        self.block = nn.Sequential(
+            Rearrange(self._in_pattern, t=24, n=207),
+            nn.Dropout(dropout),
+            BiMamba(
+                d_model=channels,
+                bimamba_type='v1',
+                input_expanded=2 if not is_pri else 1,
+                expand=1 if not is_pri else 2,
+                ),
+            nn.LayerNorm(channels),
+            Rearrange(self._out_pattern, t=24, n=207),
+        ).apply(_init_weights_mamba)
+        
+    def forward(self, x, qk=None):
+        if qk is not None:
+            x = torch.cat([x, qk], dim=-1)
+        return self.block(x)
+    
+class MambaDualScan(nn.Module):
+    def __init__(self, channels, axis='time', dropout=0.1, is_pri=False):
+        super().__init__()
+
         input_size = 2*channels if not is_pri else channels
         reducted_size = channels//2
 
-        self.input_layer = nn.Linear(input_size, reducted_size).apply(init_weights_xavier)
-        self.mamba_fw = Mamba(
-            d_model=reducted_size,
-        )
+        self._in_pattern = f'b t n f -> (b n) t f'
+        self._out_pattern = f'(b n) t f -> b t n f'
 
-        self.mamba_bw = Mamba(
-            d_model=reducted_size,
-        )
+        self.input = nn.Sequential(
+            Rearrange(self._in_pattern, t=24, n=207),
+            nn.LayerNorm(input_size),
+            nn.Linear(input_size, reducted_size),
+        ).apply(init_weights_xavier)
 
-        self.layer_norm_b = LayerNorm(reducted_size)
-        self.layer_norm_f = LayerNorm(reducted_size)
-        #self.layer_norm_final = LayerNorm(channels)
-        self.gating_f = nn.Linear(reducted_size, channels*2).apply(init_weights_xavier)
-        self.gating_b = nn.Linear(reducted_size, channels*2).apply(init_weights_xavier)
+        self.mamba_fw = Mamba(d_model=reducted_size).apply(_init_weights_mamba)
+        self.mamba_bw = Mamba(d_model=reducted_size).apply(_init_weights_mamba)
 
-        self.dropout = nn.Dropout(dropout)
+        self.output = nn.Sequential(
+            LayerNorm(reducted_size),
+            nn.Linear(reducted_size, channels),
+            nn.Dropout(dropout),
+            Rearrange(self._out_pattern, t=24, n=207),
+        ).apply(init_weights_xavier)
         
-
-        shape = '(b n) t f'
-
-        self._in_pattern = f'b t n f -> {shape}'
-        self._out_pattern = f'{shape} -> b t n f'
-
-    def gating(self, x, layer):
-        h = layer(x)
-        gate, filter = torch.chunk(h, 2, dim=-1)
-        return torch.sigmoid(gate) * filter
-
-    def gating_forward(self, x):
-        return self.gating(x, self.gating_f)
-
-    def gating_backward(self, x):
-        return self.gating(x, self.gating_b)
-    
     def forward(self, x, qk=None):
-        b, t, n, f = x.shape
         if qk is not None:
             x = torch.cat([x, qk], dim=-1)
 
-        x = rearrange(x, self._in_pattern, b=b, t=t)
-        x = self.input_layer(x)
+        h = self.input(x)
 
-        x_fw = self.layer_norm_f(self.mamba_fw(x))
-        x_bw = self.layer_norm_b(self.mamba_bw(x.flip(1)).flip(1))
+        h_fw = self.mamba_fw(h)
+        h_bw = self.mamba_bw(h.flip(1)).flip(1)
 
-        x_fw_gated = self.gating_forward(x_fw)
-        x_bw_gated = self.gating_backward(x_bw)
+        h = h_fw + h_bw
 
-        x = x_fw_gated + x_bw_gated
-
-        x = self.dropout(x)
-
-        x = rearrange(x, self._out_pattern, b=b, t=t)
-
-        return x
-
-class CustomMamba(nn.Module):
-    def __init__(self, channels, axis='time', dropout=0.1, is_pri=False):
+        return self.output(h)
+    
+class ViMamba(nn.Module):
+    def __init__(self, channels, dropout=0.1, is_pri=False):
         super().__init__()
 
-        self.axis = axis
+        input_size = 2*channels if not is_pri else channels
+        reducted_size = channels//2
 
-        self.mamba = Mamba(
-            d_model=channels,
-        )
-        self.dropout = nn.Dropout(dropout)
+        self._in_pattern = f'b t n f -> (b t) n f'
+        self._out_pattern = f'(b t) n  f -> b t n f'
+
+        self.input = nn.Sequential(
+            Rearrange(self._in_pattern, t=24, n=207),
+            nn.LayerNorm(input_size),
+            nn.Linear(input_size, reducted_size),
+        ).apply(init_weights_xavier)
         
-        if axis == 'time':
-            shape = '(b n) t f'
-        elif axis == 'nodes':
-            shape = 'b (t n) f'
+        self.mamba_fw = Mamba(d_model=reducted_size).apply(_init_weights_mamba)
+        self.mamba_bw = Mamba(d_model=reducted_size).apply(_init_weights_mamba)
 
-        self._in_pattern = f'b t n f -> {shape}'
-        self._out_pattern = f'{shape} -> b t n f'
+        self.output_vim = nn.Sequential(
+            LayerNorm(reducted_size),
+            nn.Linear(reducted_size, channels),
+            nn.Dropout(dropout),
+            Rearrange(self._out_pattern, t=24, n=207),
+        ).apply(init_weights_xavier)
 
-        if axis == 'nodes':
-            self.layer_norm = LayerNorm(channels)
+        self.output = nn.Sequential(
+            LayerNorm(channels),
+            nn.Linear(channels, channels),
+            nn.Dropout(dropout),
+        ).apply(init_weights_xavier)
 
-        if not is_pri:
-            self.info_mixer = nn.Linear(channels*2, channels).apply(init_weights_xavier)
 
     def forward(self, x, qk=None):
-        b = x.shape[0]
+        x_in = x
         if qk is not None:
             x = torch.cat([x, qk], dim=-1)
-            x = self.info_mixer(x)
 
-        x = rearrange(x, self._in_pattern, b=b, t=24)
-        if self.axis == 'nodes':
-            x = self.layer_norm(x)
-        x = self.mamba(x)
-        x = rearrange(x, self._out_pattern, b=b, t=24)
-        return self.dropout(x)
+        h = self.input(x)
 
-class MambaTime(CustomMambaDualScan):
-    def __init__(self, *args, **kwargs):
-        super().__init__(axis='time',*args, **kwargs)
+        h_fw = self.mamba_fw(h)
+        h_bw = self.mamba_bw(h.flip(1)).flip(1)
+
+        h = h_fw + h_bw
+
+        h = self.output_vim(h) + x_in
+
+        return self.output(h)
+
+class MambaNodeMamba(nn.Module):
+    def __init__(self, channels, dropout=0.1, is_pri=False):
+        super().__init__()
+
+        input_size = 2*channels if not is_pri else channels
+        reducted_size = channels//2
+
+
+        self._in_pattern = f'b t n f -> b (n t) f'
+        self._out_pattern = f'b (n t) f -> b t n f'
+
+        self.block = nn.Sequential(
+            Rearrange(self._in_pattern, t=24, n=207),
+            nn.Linear(input_size, channels).apply(init_weights_xavier),
+            Mamba(d_model=channels).apply(_init_weights_mamba),
+            nn.Dropout(dropout),
+            Rearrange(self._out_pattern, t=24, n=207),
+        )
+
+        self.norm = nn.Sequential(
+            Rearrange('b t n f -> b f t n'),
+            nn.GroupNorm(4, channels),
+            Rearrange('b f t n -> b t n f'),
+        )
+
+    def forward(self, x, qk=None):
+        x_in = x
+        if qk is not None:
+            x = torch.cat([x, qk], dim=-1)
+
+        h = self.block(x) + x_in
+
+        return self.norm(h)
+
 
 class MambaNode(nn.Module):
     def __init__(self, channels, dropout=0.1, is_pri=False):
         super().__init__()
 
-        self.vmamba = VSSBlock(hidden_dim=channels//2, forward_type='v0')
+        # self.vmamba = VSSBlock(hidden_dim=channels//2, forward_type='v0')
         self.dropout = nn.Dropout(dropout)
 
         if is_pri:

@@ -117,7 +117,7 @@ def main():
         #    mode='min'
         #),
         ModelCheckpoint(
-            monitor='val_loss_epoch',
+            monitor='val_loss',
             filename='{epoch}-{val_loss:.5f}',
             save_top_k=1,
             mode='min',
