@@ -7,6 +7,7 @@ from torchinfo import summary
 from src.models.tgnn_bi_hardcoded import BiModel
 from src.models.pristi import PriSTI
 from src.models.pristi_o import PriSTIO
+from src.models.pristi_oo import PriSTIOO
 from src.models.dtigre import DTigre
 
 from src.models.data_handlers import RandomStack, SchedulerPriSTI, create_interpolation, redefine_eval_mask
@@ -23,7 +24,7 @@ class DiffusionImputer(Imputer):
         self.masked_mae = torch_metrics.MaskedMAE()
         self.t_sampler = RandomStack(self.num_T)
         self.loss_fn = torch_metrics.MaskedMSE()
-        self.model = DTigre()
+        self.model = PriSTIO()
         
         self.scheduler = SchedulerPriSTI(
             num_train_timesteps=self.num_T,
@@ -38,7 +39,7 @@ class DiffusionImputer(Imputer):
             input_size=[(4, 24, 207, 1), (4, 24, 207, 1), (4, 24, 207, 2), (4,), (2, 1515), (1515,)],
             dtypes=[torch.float32, torch.float32, torch.float32, torch.int64, torch.int64, torch.float32],
             col_names=['input_size', 'output_size', 'num_params'],
-            depth=2
+            depth=3
             )
         
     def get_imputation(self, batch):
@@ -108,7 +109,7 @@ class DiffusionImputer(Imputer):
     def log_metrics(self, metrics, **kwargs):
         self.log_dict(
             metrics,
-            on_step=True,
+            on_step=False,
             on_epoch=True,
             logger=True,
             prog_bar=False,
@@ -119,7 +120,7 @@ class DiffusionImputer(Imputer):
         self.log(
             name + '_loss',
             loss.detach(),
-            on_step=True,
+            on_step=False,
             on_epoch=True,
             logger=True,
             prog_bar=True,
