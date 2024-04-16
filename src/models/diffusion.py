@@ -3,7 +3,6 @@ from tqdm import tqdm
 from contextlib import nullcontext
 from tsl.engines.imputer import Imputer
 from tsl.metrics import torch as torch_metrics
-from torchinfo import summary
 
 from src.models.tgnn_bi_hardcoded import BiModel
 from src.models.pristi import PriSTI
@@ -12,43 +11,34 @@ from src.models.dtigre import DTigre
 
 from src.models.data_handlers import RandomStack, SchedulerPriSTI, create_interpolation, redefine_eval_mask
 
-#import schedulefree
+from schedulefree import AdamWScheduleFree
 from torch_ema import ExponentialMovingAverage
+
+from src.utils import print_summary_model
 
 
 class DiffusionImputer(Imputer):
-    def __init__(self, scheduler_type='scaled_linear', use_ema=False, *args, **kwargs):
-        kwargs['metrics'] = {
-            'mae': torch_metrics.MaskedMAE(),
-            'mse': torch_metrics.MaskedMSE(),
-            'mre': torch_metrics.MaskedMRE()
-        }
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.use_ema = use_ema
-        self.num_T = 50
-        self.masked_mae = torch_metrics.MaskedMAE()
-        self.t_sampler = RandomStack(self.num_T)
-        self.loss_fn = torch_metrics.MaskedMSE()
-        self.model = DTigre()
-        self.ema = ExponentialMovingAverage(self.model.parameters(), decay=0.995) if self.use_ema else None
-        
-        self.scheduler = SchedulerPriSTI(
-            num_train_timesteps=self.num_T,
-            beta_schedule=scheduler_type,
-            beta_start=0.0001,
-            beta_end=0.2,
-            clip_sample=False,
-        )
-        
-        summary(
-            self.model,
-            input_size=[(4, 24, 207, 1), (4, 24, 207, 1), (4, 24, 207, 2), (4,), (2, 1515), (1515,)],
-            dtypes=[torch.float32, torch.float32, torch.float32, torch.int64, torch.int64, torch.float32],
-            col_names=['input_size', 'output_size', 'num_params'],
-            depth=2
-            )
 
-        self.optim_scheduler_free = False
+        self.masked_mae = torch_metrics.MaskedMAE()
+        self.loss_fn = torch_metrics.MaskedMSE()
+
+        scheduler_kwargs = kwargs['model_kwargs'].pop('scheduler_kwargs')
+        self.num_T = scheduler_kwargs['num_train_timesteps']
+        
+        self.t_sampler = RandomStack(self.num_T)
+        self.scheduler = SchedulerPriSTI(**scheduler_kwargs)
+
+        model_hyperparams = self.model_kwargs.pop('config')
+        model_hyperparams['num_steps'] = self.num_T
+        self.model = PriSTIO(config = model_hyperparams)
+
+        self.use_ema = self.model_kwargs['use_ema']
+        self.ema = ExponentialMovingAverage(self.parameters(), decay=self.model_kwargs['decay']) if self.use_ema else None
+
+        print_summary_model(self.model)
+        
         
     def get_imputation(self, batch):
         mask_co = batch.mask
@@ -105,24 +95,6 @@ class DiffusionImputer(Imputer):
         
         self.test_metrics.update(x_t, batch.y, batch.eval_mask)
         self.log_metrics(self.test_metrics, batch_size=batch.batch_size)
-
-    def configure_optimizers(self):
-
-        n_batches = 6159
-        optim = torch.optim.Adam(self.model.parameters(), lr=1e-3, weight_decay=1e-6)
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, T_max=n_batches*10)
-        '''
-        p1 = int(0.75 * 50)
-        p2 = int(0.9 * 50)
-        scheduler = torch.optim.lr_scheduler.MultiStepLR(optim, milestones=[p1, p2], gamma=0.1)'''
-        return [optim], [scheduler]
-        #return optim
-    
-    def configure_optimizers(self):
-        steps = 6159
-        optim = schedulefree.AdamWScheduleFree(self.model.parameters(), lr=1e-2, weight_decay=1e-6, warmup_steps=steps*10, betas=(0.95, 0.99), eps=1e-9)
-        return optim
-
     
     def log_metrics(self, metrics, **kwargs):
         self.log_dict(
@@ -160,7 +132,7 @@ class DiffusionImputer(Imputer):
 
     def on_train_epoch_start(self) -> None:
         super().on_train_epoch_start()
-        if self.optim_scheduler_free:
+        if self.optim_class == AdamWScheduleFree:
             self.optimizers().train()
 
         if self.use_ema:
@@ -174,10 +146,13 @@ class DiffusionImputer(Imputer):
 
     def on_validation_epoch_start(self) -> None:
         super().on_validation_epoch_start()
-        if self.optim_scheduler_free:
+        if self.optim_class == AdamWScheduleFree:
             self.optimizers().eval()
 
     def on_test_epoch_start(self) -> None:
         super().on_test_epoch_start()
-        if self.optim_scheduler_free:
+        if self.optim_class == AdamWScheduleFree:
             self.optimizers().eval()
+
+    def parameters(self):
+        return self.model.parameters()
