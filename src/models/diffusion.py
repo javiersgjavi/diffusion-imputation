@@ -1,5 +1,6 @@
 import torch
 from tqdm import tqdm
+from contextlib import nullcontext
 from tsl.engines.imputer import Imputer
 from tsl.metrics import torch as torch_metrics
 from torchinfo import summary
@@ -14,23 +15,22 @@ from src.models.data_handlers import RandomStack, SchedulerPriSTI, create_interp
 #import schedulefree
 from torch_ema import ExponentialMovingAverage
 
-def device_ema(ema):
-    return ema.shadow_params[0].device
 
 class DiffusionImputer(Imputer):
-    def __init__(self, scheduler_type='scaled_linear', *args, **kwargs):
+    def __init__(self, scheduler_type='scaled_linear', use_ema=False, *args, **kwargs):
         kwargs['metrics'] = {
             'mae': torch_metrics.MaskedMAE(),
             'mse': torch_metrics.MaskedMSE(),
             'mre': torch_metrics.MaskedMRE()
         }
         super().__init__(*args, **kwargs)
+        self.use_ema = use_ema
         self.num_T = 50
         self.masked_mae = torch_metrics.MaskedMAE()
         self.t_sampler = RandomStack(self.num_T)
         self.loss_fn = torch_metrics.MaskedMSE()
         self.model = DTigre()
-        self.ema = ExponentialMovingAverage(self.model.parameters(), decay=0.995)
+        self.ema = ExponentialMovingAverage(self.model.parameters(), decay=0.995) if self.use_ema else None
         
         self.scheduler = SchedulerPriSTI(
             num_train_timesteps=self.num_T,
@@ -83,7 +83,7 @@ class DiffusionImputer(Imputer):
         return loss
     
     def validation_step(self, batch, batch_idx):
-        with self.ema.average_parameters():
+        with self.ema.average_parameters() if self.use_ema else nullcontext():
             loss = torch.zeros(1).to(batch.x.device)
             for t in range(self.num_T):
                 t = (torch.ones(batch.x.shape[0]) * t).to(batch.x.device)
@@ -162,12 +162,14 @@ class DiffusionImputer(Imputer):
         if self.optim_scheduler_free:
             self.optimizers().train()
 
-        if self.ema.shadow_params[0].device != self.device:
-            self.ema.to(self.device)
+        if self.use_ema:
+            if self.ema.shadow_params[0].device != self.device:
+                self.ema.to(self.device)
 
     def on_train_batch_end(self, *args, **kwargs)-> None:
         super().on_train_batch_end(*args, **kwargs)
-        self.ema.update()
+        if self.use_ema:
+            self.ema.update()
 
     def on_validation_epoch_start(self) -> None:
         super().on_validation_epoch_start()
@@ -176,4 +178,5 @@ class DiffusionImputer(Imputer):
 
     def on_test_epoch_start(self) -> None:
         super().on_test_epoch_start()
-        self.optimizers().eval()
+        if self.optim_scheduler_free:
+            self.optimizers().eval()
