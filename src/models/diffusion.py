@@ -118,10 +118,11 @@ class DiffusionImputer(Imputer):
         return [optim], [scheduler]
         #return optim
     
-    '''def configure_optimizers(self):
-        optim = schedulefree.AdamWScheduleFree(self.model.parameters(), lr=0.0025, weight_decay=1e-6, warmup_steps=25000)
-        self.optim_scheduler_free = True
-        return optim'''
+    def configure_optimizers(self):
+        steps = 6159
+        optim = schedulefree.AdamWScheduleFree(self.model.parameters(), lr=1e-2, weight_decay=1e-6, warmup_steps=steps*10, betas=(0.95, 0.99), eps=1e-9)
+        return optim
+
     
     def log_metrics(self, metrics, **kwargs):
         self.log_dict(
