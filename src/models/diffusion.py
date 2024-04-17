@@ -27,7 +27,7 @@ class DiffusionImputer(Imputer):
         scheduler_kwargs = kwargs['model_kwargs'].pop('scheduler_kwargs')
         self.num_T = scheduler_kwargs['num_train_timesteps']
         
-        self.t_sampler = RandomStack(self.num_T)
+        self.t_sampler = RandomStack(high=self.num_T, dtype_int=True)
         self.scheduler = SchedulerPriSTI(**scheduler_kwargs)
 
         model_hyperparams = self.model_kwargs.pop('config')
@@ -54,7 +54,7 @@ class DiffusionImputer(Imputer):
         x_0 = batch.transform['x'].inverse_transform(x_ta_t)
         return x_0
     
-    def calculate_loss(self, batch, t=None):
+    def calculate_loss(self, batch, t=None, uncond=False):
         mask_ta = batch.eval_mask
         edge_index = batch.edge_index
         edge_weight = batch.edge_weight
@@ -62,7 +62,7 @@ class DiffusionImputer(Imputer):
         t = self.t_sampler.get(mask_ta.shape[0]).to(mask_ta.device) if t is None else t
         x_ta_t, cond_info, noise = self.scheduler.prepare_data(batch,t=t)
 
-        noise_pred  = self.model(x_ta_t, cond_info['x_co'], cond_info['u'], t, edge_index, edge_weight)
+        noise_pred  = self.model(x_ta_t, cond_info['x_co'], cond_info['u'], t, edge_index, edge_weight, uncond)
 
         return self.loss_fn(noise, noise_pred, mask_ta)
 
@@ -155,3 +155,36 @@ class DiffusionImputer(Imputer):
 
     def parameters(self):
         return self.model.parameters()
+
+class DiffusionImputerCFG(DiffusionImputer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.prob_uncond = 0.1
+        self.uncond_stack = RandomStack(size=5e5)
+        self.cfg_scale = 3
+
+    def training_step(self, batch, batch_idx):
+        uncond = False if self.uncond_stack.get() < self.prob_uncond else True
+        loss = self.calculate_loss(batch, uncond=uncond)
+        self.log_loss('train', loss, batch_size=batch.batch_size)
+        return loss
+    
+    def get_imputation(self, batch):
+        mask_co = batch.mask
+        edge_index = batch.edge_index
+        edge_weight = batch.edge_weight
+
+        x_ta_t, cond_info, _ = self.scheduler.prepare_data(batch)
+        
+        for i in reversed(range(self.num_T)):
+            t = (torch.ones(x_ta_t.shape[0]) * i).to(x_ta_t.device)
+            noise_pred_cond = self.model(x_ta_t, cond_info['x_co'], cond_info['u'], t, edge_index, edge_weight, uncond=False)
+            noise_pred_uncond = self.model(x_ta_t, cond_info['x_co'], cond_info['u'], t, edge_index, edge_weight, uncond=True)
+            
+            noise_pred = torch.lerp(noise_pred_uncond, noise_pred_cond, self.cfg_scale) # Debería de estar al revés?
+
+            x_ta_t = self.scheduler.clean_backwards(x_ta_t, noise_pred, mask_co, t)
+
+        x_0 = batch.transform['x'].inverse_transform(x_ta_t)
+        return x_0

@@ -8,7 +8,7 @@ from tsl.metrics import torch as torch_metrics
 from torch.optim.lr_scheduler import MultiStepLR, CosineAnnealingLR
 from schedulefree import AdamWScheduleFree
 from src.data.traffic import MetrLADataset
-from src.models.diffusion import DiffusionImputer
+from src.models.diffusion import DiffusionImputer, DiffusionImputerCFG
 
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
@@ -92,7 +92,7 @@ def main():
     }
 
 
-    imputer = DiffusionImputer(
+    imputer = DiffusionImputerCFG(
         model_kwargs=model_kwargs,
         optim_class=optimizer,
         optim_kwargs=optimizer_kwargs,

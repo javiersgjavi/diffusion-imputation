@@ -144,7 +144,7 @@ class PriSTIO(nn.Module):
             ]
         )
 
-    def forward(self, x, itp_x, u, diffusion_step, edge_index, edge_weight):
+    def forward(self, x, itp_x, u, diffusion_step, edge_index, edge_weight, uncond=False):
 
 
         if self.is_itp:
@@ -160,7 +160,7 @@ class PriSTIO(nn.Module):
         x = F.relu(x)
         x = x.reshape(B, self.channels, K, L)
 
-        if self.is_itp:
+        if self.is_itp and not uncond:
             itp_x = itp_x.reshape(B, inputdim-1, K * L)
             itp_x = self.itp_projection(itp_x)
             itp_cond_info = side_info.reshape(B, -1, K * L)
@@ -169,6 +169,9 @@ class PriSTIO(nn.Module):
             itp_x = self.itp_modeling(itp_x, [B, self.itp_channels, K, L], self.support)
             itp_x = F.relu(itp_x)
             itp_x = itp_x.reshape(B, self.itp_channels, K, L)
+            
+        elif uncond:
+            itp_x = torch.zeros_like(x).to(x.device)
 
         diffusion_emb = self.diffusion_embedding(diffusion_step)
 

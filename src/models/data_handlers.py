@@ -26,16 +26,23 @@ def redefine_eval_mask(data):
 
 
 class RandomStack:
-    def __init__(self, high, low=0, size=1e6):
+    def __init__(self, high=1, low=0, size=1e6, dtype_int=False):
         self.size = int(size)
         self.high = high
         self.low = low
-        self.stack = torch.randint(low=low, high=high, size=(self.size,))
+        self.fn = self.generate_int if dtype_int else self.generate_float
+        self.stack = self.fn(low=low, high=high, size=(self.size,))
         self.idx = 0
+
+    def generate_int(self, low, high, size):
+        return torch.randint(low=low, high=high, size=size)
+    
+    def generate_float(self, low, high, size):
+        return torch.rand(size=size)
 
     def get(self, n=1):
         if self.idx + n >= self.size:
-            self.stack = torch.randint(low=self.low, high=self.high, size=(self.size,))
+            self.stack = self.fn(low=self.low, high=self.high, size=(self.size,))
             self.idx = 0
         res = self.stack[self.idx: self.idx + n]
         self.idx += n
