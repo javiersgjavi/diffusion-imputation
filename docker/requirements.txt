@@ -13,3 +13,4 @@ mamba-ssm==1.2.0.post1
 causal-conv1d==1.1.0
 torchinfo==1.8.0
 timm==0.9.16
+schedulefree==1.2.1
