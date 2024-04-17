@@ -14,30 +14,56 @@ from einops.layers.torch import Rearrange
 from Vim.mamba.mamba_ssm.modules.mamba_simple import Mamba as BiMamba
 
 class CustomBiMamba(nn.Module):
-    def __init__(self, channels, axis='time', dropout=0.1, is_pri=False):
+    def __init__(self, channels, dropout=0.1, is_pri=False, t=24, n=207):
         super().__init__()
 
-        self._in_pattern = f'b t n f -> (b n) t f'
-        self._out_pattern = f'(b n) t f -> b t n f'
+        self.t = t
+        self.n = n
+        self.is_pri = is_pri
 
         # input_size = 2*channels if not is_pri else channels
         self.block = nn.Sequential(
-            Rearrange(self._in_pattern, t=24, n=207),
             nn.Dropout(dropout),
             BiMamba(
                 d_model=channels,
                 bimamba_type='v1',
-                input_expanded=2 if not is_pri else 1,
-                expand=1 if not is_pri else 2,
+                input_expanded=2 if not self.is_pri else 1,
+                expand=1 if not self.is_pri else 2,
                 ),
             nn.LayerNorm(channels),
-            Rearrange(self._out_pattern, t=24, n=207),
         ).apply(_init_weights_mamba)
-        
+
+    def reshape_pri(self, x):
+        t, bn, f = x.shape
+        b = bn//self.n
+        x = x.reshape(t, b, self.n, f)
+        x = x.permute(0,2,1,3).reshape(b*self.n, self.t, f)
+        return x
+
+    def reshape_nem(self, x, qk):
+        b, f, n, t = qk.shape
+        x = x.reshape(b, f, n, t).permute(0, 2, 3, 1).reshape(b*n, t, f)
+        qk = qk.permute(0, 2, 3, 1).reshape(b*n, t, f)
+        return torch.cat([x, qk], dim=-1)
+
+    def reshape_out_nem(self, x):
+        bn, t, f = x.shape
+        b = bn//self.n
+        x = x.reshape(b, self.n, t, f)
+        x = x.permute(0, 3, 1, 2).reshape(b, f, self.n*t)
+        return x
+
     def forward(self, x, qk=None):
-        if qk is not None:
-            x = torch.cat([x, qk], dim=-1)
-        return self.block(x)
+        b, _, f = x.shape
+
+        if self.is_pri:
+            x = self.reshape_pri(x)
+        elif not self.is_pri:
+            x = self.reshape_nem(x, qk)
+
+        x = self.block(x)
+        x = self.reshape_out_nem(x) if not self.is_pri else x
+        return x
     
 class MambaDualScan(nn.Module):
     def __init__(self, channels, axis='time', dropout=0.1, is_pri=False):
@@ -62,10 +88,10 @@ class MambaDualScan(nn.Module):
             LayerNorm(reducted_size),
             nn.Linear(reducted_size, channels),
             nn.Dropout(dropout),
-            Rearrange(self._out_pattern, t=24, n=207),
         ).apply(init_weights_xavier)
         
     def forward(self, x, qk=None):
+        
         if qk is not None:
             x = torch.cat([x, qk], dim=-1)
 

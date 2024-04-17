@@ -17,13 +17,15 @@ from torch_ema import ExponentialMovingAverage
 
 from src.utils import print_summary_model
 
-
 class DiffusionImputer(Imputer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         self.masked_mae = torch_metrics.MaskedMAE()
         self.loss_fn = torch_metrics.MaskedMSE()
+
+        scheduler_kwargs = kwargs['model_kwargs'].pop('scheduler_kwargs')
+        self.num_T = scheduler_kwargs['num_train_timesteps']
         
         self.t_sampler = RandomStack(self.num_T)
         self.scheduler = SchedulerPriSTI(**scheduler_kwargs)
@@ -35,7 +37,7 @@ class DiffusionImputer(Imputer):
         self.use_ema = self.model_kwargs['use_ema']
         self.ema = ExponentialMovingAverage(self.parameters(), decay=self.model_kwargs['decay']) if self.use_ema else None
 
-        print_summary_model(self.model)
+        # print_summary_model(self.model)
         
     def get_imputation(self, batch):
         mask_co = batch.mask
