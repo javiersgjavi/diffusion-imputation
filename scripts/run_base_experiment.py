@@ -84,7 +84,9 @@ def main():
             'is_cross_s': True, 
             'adj_file': 'metr-la', 
             'side_dim': 144,
-            'nodes': dm.n_nodes
+            'num_nodes': dm.n_nodes,
+            'time_steps': dm.window,
+            'batch_size': dm.batch_size,
         }
 
     }
@@ -109,12 +111,6 @@ def main():
     )
 
     callbacks = [
-        #EarlyStopping(
-        #    monitor='val_loss',
-        #    patience=200,
-        #    verbose=True,
-        #    mode='min'
-        #),
         ModelCheckpoint(
             monitor='val_loss',
             filename='{epoch}-{val_loss:.5f}',
@@ -131,7 +127,6 @@ def main():
         accelerator='gpu',
         # devices=[2],
         callbacks=callbacks,
-        #limit_train_batches=0.002
         )
 
 
