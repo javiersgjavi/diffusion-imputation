@@ -13,25 +13,13 @@ from einops.layers.torch import Rearrange
 
 from Vim.mamba.mamba_ssm.modules.mamba_simple import Mamba as BiMamba
 
-class CustomBiMamba(nn.Module):
-    def __init__(self, channels, dropout=0.1, is_pri=False, t=24, n=207):
+class WrapperMambaModule(nn.Module):
+    def __init__(self, is_pri=False, t=24, n=207, sum=True):
         super().__init__()
-
+        self.is_pri = is_pri
         self.t = t
         self.n = n
-        self.is_pri = is_pri
-
-        # input_size = 2*channels if not is_pri else channels
-        self.block = nn.Sequential(
-            nn.Dropout(dropout),
-            BiMamba(
-                d_model=channels,
-                bimamba_type='v1',
-                input_expanded=2 if not self.is_pri else 1,
-                expand=1 if not self.is_pri else 2,
-                ),
-            nn.LayerNorm(channels),
-        ).apply(_init_weights_mamba)
+        self.sum = sum
 
     def reshape_pri(self, x):
         t, bn, f = x.shape
@@ -44,26 +32,75 @@ class CustomBiMamba(nn.Module):
         b, f, n, t = qk.shape
         x = x.reshape(b, f, n, t).permute(0, 2, 3, 1).reshape(b*n, t, f)
         qk = qk.permute(0, 2, 3, 1).reshape(b*n, t, f)
-        return torch.cat([x, qk], dim=-1)
-
-    def reshape_out_nem(self, x):
-        bn, t, f = x.shape
-        b = bn//self.n
-        x = x.reshape(b, self.n, t, f)
-        x = x.permute(0, 3, 1, 2).reshape(b, f, self.n*t)
+        x = x + qk if self.sum else torch.cat([x, qk], dim=-1)
         return x
 
-    def forward(self, x, qk=None):
-        b, _, f = x.shape
-
+    def reshape_out(self, x):
+        if not self.is_pri:
+            bn, t, f = x.shape
+            b = bn//self.n
+            x = x.reshape(b, self.n, t, f)
+            x = x.permute(0, 3, 1, 2).reshape(b, f, self.n*t)
+        return x
+    
+    def reshape_in(self, x, qk=None):
         if self.is_pri:
             x = self.reshape_pri(x)
         elif not self.is_pri:
             x = self.reshape_nem(x, qk)
-
-        x = self.block(x)
-        x = self.reshape_out_nem(x) if not self.is_pri else x
         return x
+    
+class CustomMamba(WrapperMambaModule):
+    def __init__(self, channels, dropout=0.1, is_pri=False, t=24, n=207):
+        super().__init__(is_pri, t, n)
+
+        self.block = nn.Sequential(
+            nn.Dropout(dropout),
+            nn.LayerNorm(channels) if not is_pri else nn.Identity(),
+            #Mamba(d_model=channels).apply(_init_weights_mamba),
+            BiMamba(d_model=channels, bimamba_type='v2').apply(_init_weights_mamba),
+            nn.LayerNorm(channels),
+        ).apply(_init_weights_mamba)
+
+    def forward(self, x, qk=None):
+        x = self.reshape_in(x, qk)
+        h = self.block(x)
+        if self.is_pri:
+            h +=  x
+        h = self.reshape_out(h)
+        return h
+
+class CustomBiMamba(nn.WrapperMambaModule):
+    def __init__(self, channels, dropout=0.1, is_pri=False, t=24, n=207):
+        super().__init__(is_pri, t, n, sum=False)
+
+        self.input = nn.Sequential(
+            nn.Dropout(dropout),
+            nn.Linear(channels*2, channels),
+        )
+
+        self.block_f = Mamba(d_model=channels).apply(_init_weights_mamba).apply(_init_weights_mamba)
+
+        self.block_b =  Mamba(d_model=channels).apply(_init_weights_mamba).apply(_init_weights_mamba)
+
+        self.norm = nn.LayerNorm(channels)
+
+
+    def forward(self, x, qk=None):
+        x = self.reshape_in(x, qk)
+        h = self.input(x)
+
+        h_fw = self.block_f(h)
+        h_bw = self.block_b(h.flip(1)).flip(1)
+
+        h = h_fw + h_bw
+
+        h =  self.norm(h)
+        
+        if self.is_pri:
+            h +=  x
+        h = self.reshape_out(h)
+        return h
     
 class MambaDualScan(nn.Module):
     def __init__(self, channels, axis='time', dropout=0.1, is_pri=False):

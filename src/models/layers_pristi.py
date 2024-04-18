@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import math
 from src.utils_pristi import *
 
-from src.models.layers import CustomBiMamba
+from src.models.layers import CustomBiMamba, CustomMamba
 
 
 def Attn_tem(heads=8, layers=1, channels=64):
@@ -248,8 +248,8 @@ class GuidanceConstruct(nn.Module):
         super().__init__()
         self.GCN = AdaptiveGCN(channels, order=order, include_self=include_self, device=device, is_adp=is_adp, adj_file=adj_file)
         self.attn_s = Attn_spa(dim=channels, seq_len=target_dim, k=proj_t, heads=nheads)
-        #self.attn_t = Attn_tem(heads=nheads, layers=1, channels=channels)
-        self.attn_t  = CustomBiMamba(channels=channels, is_pri=True, t=time_steps, n=num_nodes)
+        # self.attn_t = Attn_tem(heads=nheads, layers=1, channels=channels)
+        self.attn_t  = CustomMamba(channels=channels, is_pri=True, t=time_steps, n=num_nodes)
         self.norm1_local = nn.GroupNorm(4, channels)
         self.norm1_attn_s = nn.GroupNorm(4, channels)
         self.norm1_attn_t = nn.GroupNorm(4, channels)
