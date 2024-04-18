@@ -70,7 +70,7 @@ class CustomMamba(WrapperMambaModule):
         h = self.reshape_out(h)
         return h
 
-class CustomBiMamba(nn.WrapperMambaModule):
+class CustomBiMamba(WrapperMambaModule):
     def __init__(self, channels, dropout=0.1, is_pri=False, t=24, n=207):
         super().__init__(is_pri, t, n, sum=False)
 
@@ -96,7 +96,7 @@ class CustomBiMamba(nn.WrapperMambaModule):
         h = h_fw + h_bw
 
         h =  self.norm(h)
-        
+
         if self.is_pri:
             h +=  x
         h = self.reshape_out(h)
