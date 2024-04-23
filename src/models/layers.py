@@ -55,8 +55,8 @@ class CustomMamba(WrapperMambaModule):
         super().__init__(is_pri, t, n)
 
         self.block = nn.Sequential(
-            nn.Dropout(dropout),
             nn.LayerNorm(channels) if not is_pri else nn.Identity(),
+            nn.Dropout(dropout),
             #Mamba(d_model=channels).apply(_init_weights_mamba),
             BiMamba(d_model=channels, bimamba_type='v2').apply(_init_weights_mamba),
             nn.LayerNorm(channels),
