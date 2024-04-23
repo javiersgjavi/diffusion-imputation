@@ -11,7 +11,7 @@ class SideInfo(nn.Module):
         self.time_steps = time_steps
         self.embed_layer = nn.Embedding(num_embeddings=self.num_nodes, embedding_dim=16)
 
-        self.arange = torch.arange(207)
+        self.arange = torch.arange(self.num_nodes)
     
     def get_time(self, B):
         observed_tp = torch.arange(self.time_steps).unsqueeze(0)
@@ -85,7 +85,6 @@ class PriSTIO(nn.Module):
     def __init__(self, inputdim=2, is_itp=True, config=None):
         super().__init__()
         
-        config['device'] = None
         self.num_nodes = config['num_nodes']
         self.channels = config["channels"]
         self.time_steps = config["time_steps"]
@@ -100,7 +99,7 @@ class PriSTIO(nn.Module):
             self.itp_projection = Conv1d_with_init(inputdim-1, self.itp_channels, 1)
 
             self.itp_modeling = GuidanceConstruct(channels=self.itp_channels, nheads=config["nheads"], target_dim=self.num_nodes,
-                                            order=2, include_self=True, device=config["device"], is_adp=config["is_adp"],
+                                            order=2, include_self=True, device=None, is_adp=config["is_adp"],
                                             adj_file=config["adj_file"], proj_t=config["proj_t"], time_steps = config["time_steps"], num_nodes = config['num_nodes'])
             self.cond_projection = Conv1d_with_init(config["side_dim"], self.itp_channels, 1)
 
@@ -110,7 +109,7 @@ class PriSTIO(nn.Module):
         )
 
         self.adj = get_similarity_metrla(thr=0.1)
-        self.support = compute_support_gwn(self.adj, device=config["device"])
+        self.support = compute_support_gwn(self.adj)
         self.is_adp = config["is_adp"]
         if self.is_adp:
             node_num = self.adj.shape[0]
@@ -133,7 +132,7 @@ class PriSTIO(nn.Module):
                     target_dim=self.num_nodes,
                     proj_t=config["proj_t"],
                     is_adp=config["is_adp"],
-                    device=config["device"],
+                    device=None,
                     adj_file=config["adj_file"],
                     is_cross_t=config["is_cross_t"],
                     is_cross_s=config["is_cross_s"],

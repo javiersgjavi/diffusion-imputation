@@ -1,5 +1,7 @@
 import torch
 from tqdm import tqdm
+from omegaconf import DictConfig, OmegaConf, open_dict
+
 from contextlib import nullcontext
 from tsl.engines.imputer import Imputer
 from tsl.metrics import torch as torch_metrics
@@ -31,13 +33,15 @@ class DiffusionImputer(Imputer):
         self.scheduler = SchedulerPriSTI(**scheduler_kwargs)
 
         model_hyperparams = self.model_kwargs.pop('config')
-        model_hyperparams['num_steps'] = self.num_T
+        with open_dict(model_hyperparams):
+            model_hyperparams.num_steps = self.num_T
+
         self.model = PriSTIO(config = model_hyperparams)
 
         self.use_ema = self.model_kwargs['use_ema']
         self.ema = ExponentialMovingAverage(self.parameters(), decay=self.model_kwargs['decay']) if self.use_ema else None
 
-        print_summary_model(self.model)
+        print_summary_model(self.model, model_hyperparams)
         
     def get_imputation(self, batch):
         mask_co = batch.mask
