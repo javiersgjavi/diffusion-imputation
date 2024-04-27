@@ -115,7 +115,6 @@ class PriSTIO(nn.Module):
         elif config["adj_file"] == 'pems-bay':
             self.adj = get_similarity_pemsbay(thr=0.1)
 
-            
         self.support = compute_support_gwn(self.adj)
         self.is_adp = config["is_adp"]
         if self.is_adp:

@@ -17,7 +17,7 @@ class TrafficDataset:
         self.window_size = int(self.base_window * scale_window_factor)
         stride = self.window_size if stride == 'window_size' else stride
 
-        og_mask = self.data_class(impute_zeros=False).mask
+        og_mask = self.data_class(**self.args_dataset).mask
 
         if point:
             p_fault = 0. if p_fault is None else p_fault
@@ -28,7 +28,7 @@ class TrafficDataset:
             p_noise = 0.05 if p_noise is None else p_noise
 
         dataset = add_missing_values(
-            self.data_class(impute_zeros=False),
+            self.data_class(**self.args_dataset),
             p_fault=p_fault,
             p_noise=p_noise,
             min_seq=12,
@@ -78,7 +78,10 @@ class MetrLADataset(TrafficDataset):
     def __init__(self, **kwargs):
         self.data_class = MetrLA
         self.seed = 9101112
-        self.dataset= 'la' 
+        self.dataset= 'la'
+        self.args_dataset = {
+            'impute_zeros': False
+        }
         super().__init__(**kwargs)
 
 class PemsBayDataset(TrafficDataset):
@@ -86,4 +89,7 @@ class PemsBayDataset(TrafficDataset):
         self.data_class = PemsBay
         self.seed = 9101112
         self.dataset='bay'
+        self.args_dataset = {
+            'mask_zeros': False
+        }
         super().__init__(**kwargs)

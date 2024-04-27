@@ -39,7 +39,7 @@ def get_similarity_AQI(dist, thr=0.1, include_self=False, force_symmetric=False,
     return adj
 
 def get_similarity_pemsbay(thr=0.1, force_symmetric=False, sparse=False):
-    dist = np.load('./data/pems_bay/pems_bay_dist.npy')
+    dist = np.load('../../data/pems_bay/pems_bay_dist.npy')
     finite_dist = dist.reshape(-1)
     finite_dist = finite_dist[~np.isinf(finite_dist)]
     sigma = finite_dist.std()

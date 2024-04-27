@@ -9,8 +9,7 @@ from src.experiments.experiment import AverageExperiment
 def main(cfg: DictConfig):
 
     experiment = AverageExperiment(
-        name_experiment='metr_la',
-        dataset='metr-la',
+        dataset=cfg.dataset.name,
         cfg=cfg,
         optimizer_type=0,
         seed=42,

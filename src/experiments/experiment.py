@@ -17,7 +17,7 @@ from pytorch_lightning import Trainer
 
 from tsl.metrics import torch as torch_metrics
 
-from src.data.traffic import MetrLADataset
+from src.data.traffic import MetrLADataset, PemsBayDataset
 from src.models.diffusion import DiffusionImputer
 
 class Experiment:
@@ -29,8 +29,6 @@ class Experiment:
         self.accelerator = accelerator
         self.device = device
 
-
-
     def prepare_data(self):
         dm_params = {
             'batch_size': self.cfg.config.batch_size,
@@ -39,6 +37,8 @@ class Experiment:
 
         if self.dataset == 'metr-la':
             data_class = MetrLADataset
+        elif self.dataset == 'pems-bay':
+            data_class = PemsBayDataset
 
         self.dm = data_class(**dm_params).get_dm()
         self.dm_stride = data_class(stride='window_size', **dm_params).get_dm()
@@ -124,7 +124,6 @@ class Experiment:
             accelerator=self.accelerator,
             devices=[self.device] if self.device is not None else None,
             callbacks=self.callbacks,
-            
             )
         
     def run(self):
@@ -158,8 +157,7 @@ class Experiment:
         return results[0]
 
 class AverageExperiment:
-    def __init__(self, name_experiment, dataset, cfg, optimizer_type, seed, epochs, accelerator='gpu', device=None, n=5):
-        self.name_experiment = name_experiment
+    def __init__(self, dataset, cfg, optimizer_type, seed, epochs, accelerator='gpu', device=None, n=5):
         self.dataset = dataset
         self.cfg = cfg
         self.optimizer_type = optimizer_type
