@@ -171,11 +171,9 @@ class AverageExperiment:
         self.folder = f'./metrics/'
 
         self.kwargs_experiment = {
-            'name_experiment': self.name_experiment,
             'dataset': self.dataset,
             'cfg': self.cfg,
             'optimizer_type': self.optimizer_type,
-            'seed': self.seed,
             'epochs': self.epochs,
             'accelerator': self.accelerator,
             'device': self.device

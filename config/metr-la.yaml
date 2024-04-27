@@ -14,7 +14,7 @@ config :
   is_cross_s: true
   adj_file: metr-la
   side_dim: 144
-  scale_window_factor: 1
+  scale_window_factor: 4
   batch_size: 4
 
 hydra:
