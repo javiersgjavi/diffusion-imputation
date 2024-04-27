@@ -10,7 +10,12 @@ from tsl.data.datamodule import TemporalSplitter, SpatioTemporalDataModule
 from src.data.transformations import ImputatedDataset, CustomTransform, CustomScaler
 
 class TrafficDataset:
-    def __init__(self, p_fault=None, p_noise=None, point=True, stride=1):
+    def __init__(self, p_fault=None, p_noise=None, point=True, stride=1, batch_size=4, scale_window_factor=1):
+
+        self.base_window = 24
+
+        self.window_size = int(self.base_window * scale_window_factor)
+        stride = self.window_size if stride == 'window_size' else stride
 
         og_mask = self.data_class(impute_zeros=False).mask
 
@@ -48,7 +53,7 @@ class TrafficDataset:
             covariates=covariates,
             transform=CustomTransform(),
             connectivity=connectivity,
-            window=24,
+            window=self.window_size,
             stride=stride
         )
 
@@ -63,7 +68,7 @@ class TrafficDataset:
             dataset=torch_dataset,
             scalers=scalers,
             splitter=splitter,
-            batch_size=4,
+            batch_size=batch_size,
             )
 
     def get_dm(self):
@@ -73,7 +78,7 @@ class MetrLADataset(TrafficDataset):
     def __init__(self, **kwargs):
         self.data_class = MetrLA
         self.seed = 9101112
-        self.dataset= 'la'
+        self.dataset= 'la' 
         super().__init__(**kwargs)
 
 class PemsBayDataset(TrafficDataset):
