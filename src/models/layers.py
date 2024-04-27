@@ -76,7 +76,7 @@ class CustomBiMamba(WrapperMambaModule):
 
         self.input = nn.Sequential(
             nn.Dropout(dropout),
-            nn.Linear(channels*2, channels),
+            nn.Linear(channels*2, channels) if not is_pri else nn.Identity(),
         )
 
         self.block_f = Mamba(d_model=channels).apply(_init_weights_mamba).apply(_init_weights_mamba)
@@ -97,8 +97,8 @@ class CustomBiMamba(WrapperMambaModule):
 
         h =  self.norm(h)
 
-        if self.is_pri:
-            h +=  x
+        '''if self.is_pri:
+            h +=  x'''
         h = self.reshape_out(h)
         return h
     

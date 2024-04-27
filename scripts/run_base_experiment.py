@@ -125,7 +125,7 @@ def main():
         default_root_dir='./logs',
         logger=logger,
         accelerator='gpu',
-        devices=[2],
+        devices=[1],
         callbacks=callbacks,
         )
 

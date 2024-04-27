@@ -37,7 +37,7 @@ class DiffusionImputer(Imputer):
         self.use_ema = self.model_kwargs['use_ema']
         self.ema = ExponentialMovingAverage(self.parameters(), decay=self.model_kwargs['decay']) if self.use_ema else None
 
-        print_summary_model(self.model)
+        # print_summary_model(self.model)
         
     def get_imputation(self, batch):
         mask_co = batch.mask

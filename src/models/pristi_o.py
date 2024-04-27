@@ -48,7 +48,7 @@ class NoiseProject(nn.Module):
         self.mid_projection = Conv1d_with_init(channels, 2 * channels, 1)
         self.output_projection = Conv1d_with_init(channels, 2 * channels, 1)
 
-        self.forward_time = CustomMamba(channels=channels, t=time_steps, n=num_nodes)
+        self.forward_time = CustomBiMamba(channels=channels, t=time_steps, n=num_nodes)
         # self.forward_time = TemporalLearning(channels=channels, nheads=nheads, is_cross=is_cross_t)
         self.forward_feature = SpatialLearning(channels=channels, nheads=nheads, target_dim=target_dim,
                                                order=order, include_self=include_self, device=device, is_adp=is_adp,

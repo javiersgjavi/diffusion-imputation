@@ -48,7 +48,7 @@ class TrafficDataset:
             covariates=covariates,
             transform=CustomTransform(),
             connectivity=connectivity,
-            window=24,
+            window=24*4,
             stride=stride
         )
 
