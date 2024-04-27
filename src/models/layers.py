@@ -54,7 +54,7 @@ class CustomMamba(WrapperMambaModule):
     def __init__(self, channels, dropout=0.1, is_pri=False, t=24, n=207):
         super().__init__(is_pri, t, n)
 
-        self.fn_suma = self.tipo1
+        self.fn_suma = self.tipo0
 
         self.block = nn.Sequential(
             nn.LayerNorm(channels) if not is_pri else nn.Identity(),
@@ -64,6 +64,9 @@ class CustomMamba(WrapperMambaModule):
             nn.LayerNorm(channels),
         ).apply(_init_weights_mamba)
 
+    def tipo0(self, h, x):
+        return h
+    
     def tipo1(self, h, x):
         return h + x
     
