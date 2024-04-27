@@ -179,7 +179,7 @@ def print_summary_model(model, params, depth=2):
     b = params.batch_size
     summary(
             model,
-            input_size=[(b, t, n, 1), (b, t, n, 1), (b, t, n, 2), (4,), (2, 1515), (1515,)],
+            input_size=[(b, t, n, 1), (b, t, n, 1), (b, t, n, 2), (b,), (2, 1515), (1515,)],
             dtypes=[torch.float32, torch.float32, torch.float32, torch.int64, torch.int64, torch.float32],
             col_names=['input_size', 'output_size', 'num_params'],
             depth=depth

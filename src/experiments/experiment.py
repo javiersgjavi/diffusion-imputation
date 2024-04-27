@@ -18,6 +18,7 @@ from pytorch_lightning import Trainer
 from tsl.metrics import torch as torch_metrics
 
 from src.data.traffic import MetrLADataset, PemsBayDataset
+from src.data.airquality import AQI36Dataset
 from src.models.diffusion import DiffusionImputer
 
 class Experiment:
@@ -39,12 +40,18 @@ class Experiment:
             data_class = MetrLADataset
         elif self.dataset == 'pems-bay':
             data_class = PemsBayDataset
+        elif self.dataset == 'aqi-36':
+            data_class = AQI36Dataset
 
         self.dm = data_class(**dm_params).get_dm()
         self.dm_stride = data_class(stride='window_size', **dm_params).get_dm()
 
+
         self.dm.setup()
         self.dm_stride.setup()
+
+
+        print(self.dm)
 
         with open_dict(self.cfg):
             self.cfg.config.time_steps = self.dm.window
