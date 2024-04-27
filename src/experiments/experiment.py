@@ -118,7 +118,7 @@ class Experiment:
         ]
 
         self.trainer = Trainer(
-            max_epochs=1, #self.epochs,
+            max_epochs=self.epochs,
             default_root_dir='./logs',
             logger=logger,
             accelerator=self.accelerator,
