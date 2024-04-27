@@ -2,9 +2,9 @@ defaults:
   - base
 
 dataset:
-  name: metr-la
+  name: pems-bay
   scenario: point
-  
+
 # Model hyperparameters:
 config : 
   # Base PriSTI hyperparameters
