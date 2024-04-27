@@ -5,7 +5,7 @@ import scipy.sparse as sp
 
 
 def get_similarity_metrla(thr=0.1, force_symmetric=False, sparse=False):
-    dist = np.load('../../../data/metr_la/metr_la_dist.npy')
+    dist = np.load('../../data/metr_la/metr_la_dist.npy')
     finite_dist = dist.reshape(-1)
     finite_dist = finite_dist[~np.isinf(finite_dist)]
     sigma = finite_dist.std()

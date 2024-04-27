@@ -1,3 +1,5 @@
+results/*
+outputs/*
 pruebas.ipynb
 wandb/*
 logs/*
