@@ -107,6 +107,7 @@ class Experiment:
             optim_class=self.optimizer,
             optim_kwargs=self.optimizer_kwargs,
             whiten_prob=list(np.arange(0,1,0.001)),
+            # whiten_prob=None,
             scheduler_class=self.scheduler,
             scheduler_kwargs=self.scheduler_kwargs,
             metrics = {

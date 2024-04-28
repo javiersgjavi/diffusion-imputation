@@ -163,7 +163,8 @@ class DiffusionImputer(Imputer):
         return self.model.parameters()
     
     def on_train_batch_start(self, batch, batch_idx: int) -> None:
-        self.missing_pattern_handler.update_mask(batch)
+        super().on_train_batch_start(batch, batch_idx)
+        #self.missing_pattern_handler.update_mask(batch)
 
         batch = create_interpolation(batch)
         batch = redefine_eval_mask(batch)

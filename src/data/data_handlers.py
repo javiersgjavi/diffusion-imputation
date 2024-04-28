@@ -97,15 +97,15 @@ class PointStrategy:
 
     def get_mask(self, batch):
         missing_rate = self.rnd_stack.get(batch.x.shape[0]).to(batch.x.device).unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
-        custom_mask = torch.rand_like(batch.x) < missing_rate
-        return custom_mask.to(batch.x.device)
+        custom_mask = torch.rand_like(batch.x).to(batch.x.device) < missing_rate
+        return custom_mask
     
 class BlockStrategy:
-    def __init__(self, p=0.15, p_noise=0.05, min_seq=12, max_seq=24):  
+    def __init__(self, p=0.15, p_noise=0.05, min_seq=None, max_seq=24):  
         self.p_stack = RandomStack(high=p)
         self.p_noise = p_noise
-        self.min_seq = min_seq
         self.max_seq = max_seq
+        self.min_seq = min_seq if min_seq is not None else max_seq // 2
 
     def get_mask(self, batch):
         sample_size = batch.x.shape[1:]
@@ -136,6 +136,8 @@ class MissingPatternHandler:
     def __init__(self, strategy1='point', strategy2=None, hist_patterns=None):
         self.strategy1 = self.get_class_strategy(strategy1, hist_patterns)
         self.strategy2 = self.get_class_strategy(strategy2, hist_patterns)
+        self.rnd_stack = RandomStack()
+
 
     def get_class_strategy(self, strategy, hist_patterns):
         if strategy == 'point':
@@ -148,13 +150,18 @@ class MissingPatternHandler:
             return None
 
     def update_mask(self, batch):
-        custom_mask = self.strategy1.get_mask(batch)
-        if self.strategy2 is not None:
-            custom_mask2 = self.strategy2.get_mask(batch)
-            custom_mask = torch.where(torch.rand_like(batch.x) < 0.5, custom_mask, custom_mask2)
+        custom_mask = self.strategy1.get_mask(batch).bool()
+        new_mask = batch.mask & custom_mask
 
-        batch.mask = batch.mask & custom_mask.bool()
-        batch.input.x = batch.input.x * batch.mask.int()
+        if self.strategy2 is not None:
+            custom_mask2 = self.strategy2.get_mask(batch).bool()
+            new_mask2 = batch.mask & custom_mask2
+
+            mask_sample = self.rnd_stack.get(batch.x.shape[0]).to(batch.x.device)
+            new_mask = torch.where(mask_sample < 0.5, new_mask, new_mask2)
+
+        batch.mask = new_mask
+        batch.input.x = batch.input.x * batch.mask
 
     def check_missing_rate(self, batch):
         missing_rate = 1 - torch.mean(batch.mask.float())
