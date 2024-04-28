@@ -21,6 +21,10 @@ config :
   scale_window_factor: 2
   batch_size: 4
 
+missing_pattern:
+  strategy1: point
+  strategy2: null
+
 hydra:
   run:
     dir: ./results/${config.adj_file}/

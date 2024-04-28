@@ -1,3 +1,4 @@
+import torch
 import numpy as np
 from tsl.datasets import AirQuality
 from tsl.data.datamodule import SpatioTemporalDataModule
@@ -12,7 +13,6 @@ class AirDataset:
         stride = self.window_size if stride == 'window_size' else stride
 
         og_mask = AirQuality(small=self.small).mask
-
         dataset = AirQuality(small=self.small)
 
         connectivity = dataset.get_connectivity(
@@ -52,6 +52,15 @@ class AirDataset:
         
     def get_dm(self):
         return self.dm
+    
+    def get_historical_patterns(self):
+        self.dm.setup()
+        test_loader = self.dm.test_dataloader()
+        historical_patterns = []
+        for batch in test_loader:
+            historical_patterns.append(batch.mask)
+
+        return torch.cat(historical_patterns, dim=0)
 
 
 class AQI36Dataset(AirDataset):

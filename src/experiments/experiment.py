@@ -46,10 +46,13 @@ class Experiment:
         self.dm = data_class(**dm_params).get_dm()
         self.dm_stride = data_class(stride='window_size', **dm_params).get_dm()
 
+        if self.cfg.missing_pattern.strategy1 == 'historical' or self.cfg.missing_pattern.strategy2 == 'historical':
+            self.hist_patterns = data_class(stride='window_size', **dm_params).get_historical_patterns()
+        else:
+            self.hist_patterns = None
 
         self.dm.setup()
         self.dm_stride.setup()
-
 
         print(self.dm)
 
@@ -96,8 +99,11 @@ class Experiment:
 
     def prepare_model(self):
         
+        cfg = dict(self.cfg)
+        cfg['hist_patterns'] = self.hist_patterns
+
         self.model = DiffusionImputer(
-            model_kwargs=dict(self.cfg),
+            model_kwargs=cfg,
             optim_class=self.optimizer,
             optim_kwargs=self.optimizer_kwargs,
             whiten_prob=list(np.arange(0,1,0.001)),
@@ -131,6 +137,7 @@ class Experiment:
             accelerator=self.accelerator,
             devices=[self.device] if self.device is not None else None,
             callbacks=self.callbacks,
+            num_sanity_val_steps=None
             )
         
     def run(self):
