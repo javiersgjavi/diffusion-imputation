@@ -128,22 +128,22 @@ class HistoryStrategy:
 
     def get_mask(self, batch):
         index = self.rnd_stack_int.get(batch.x.shape[0])
-        patterns = self.hist_patterns[index]
-        return patterns.to(batch.x.device)
+        patterns = self.hist_patterns[index].to(batch.x.device)
+        return patterns
     
 
 class MissingPatternHandler:
-    def __init__(self, strategy1='point', strategy2=None, hist_patterns=None):
-        self.strategy1 = self.get_class_strategy(strategy1, hist_patterns)
-        self.strategy2 = self.get_class_strategy(strategy2, hist_patterns)
+    def __init__(self, strategy1='point', strategy2=None, hist_patterns=None, seq_len=None):
+        self.strategy1 = self.get_class_strategy(strategy1, hist_patterns, seq_len)
+        self.strategy2 = self.get_class_strategy(strategy2, hist_patterns, seq_len)
         self.rnd_stack = RandomStack()
 
 
-    def get_class_strategy(self, strategy, hist_patterns):
+    def get_class_strategy(self, strategy, hist_patterns, seq_len=None):
         if strategy == 'point':
             return PointStrategy()
         elif strategy == 'block':
-            return BlockStrategy()
+            return BlockStrategy(max_seq=seq_len)
         elif strategy == 'historical':
             return HistoryStrategy(hist_patterns)
         else:
@@ -157,8 +157,10 @@ class MissingPatternHandler:
             custom_mask2 = self.strategy2.get_mask(batch).bool()
             new_mask2 = batch.mask & custom_mask2
 
-            mask_sample = self.rnd_stack.get(batch.x.shape[0]).to(batch.x.device)
-            new_mask = torch.where(mask_sample < 0.5, new_mask, new_mask2)
+            mask_sample = self.rnd_stack.get(batch.x.shape[0]).to(batch.x.device) < 0.5
+            for i, use_mask_2 in enumerate(mask_sample):
+                if use_mask_2:
+                    new_mask[i] = new_mask2[i]
 
         batch.mask = new_mask
         batch.input.x = batch.input.x * batch.mask

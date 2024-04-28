@@ -30,7 +30,7 @@ class DiffusionImputer(Imputer):
         scheduler_kwargs = kwargs['model_kwargs'].pop('scheduler_kwargs')
         self.num_T = scheduler_kwargs['num_train_timesteps']
         
-        self.t_sampler = RandomStack(self.num_T)
+        self.t_sampler = RandomStack(self.num_T, dtype_int=True)
         self.scheduler = SchedulerPriSTI(**scheduler_kwargs)
 
         model_hyperparams = self.model_kwargs.pop('config')
@@ -45,7 +45,8 @@ class DiffusionImputer(Imputer):
         self.missing_pattern_handler = MissingPatternHandler(
             strategy1=self.model_kwargs['missing_pattern']['strategy1'], 
             strategy2=self.model_kwargs['missing_pattern']['strategy2'], 
-            hist_patterns=self.model_kwargs['hist_patterns']
+            hist_patterns=self.model_kwargs['hist_patterns'],
+            seq_len=model_hyperparams['time_steps']
             )
 
         print_summary_model(self.model, model_hyperparams)
@@ -164,7 +165,7 @@ class DiffusionImputer(Imputer):
     
     def on_train_batch_start(self, batch, batch_idx: int) -> None:
         super().on_train_batch_start(batch, batch_idx)
-        #self.missing_pattern_handler.update_mask(batch)
+        self.missing_pattern_handler.update_mask(batch)
 
         batch = create_interpolation(batch)
         batch = redefine_eval_mask(batch)
