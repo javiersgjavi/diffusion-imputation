@@ -2,9 +2,8 @@ import torch
 import numpy as np
 from tsl.datasets import AirQuality
 from tsl.data.datamodule import SpatioTemporalDataModule
-from tsl.data.preprocessing.scalers import StandardScaler
 
-from src.data.transformations import ImputatedDataset, CustomTransform, CustomScaler, CustomScalerAQI
+from src.data.transformations import ImputatedDataset, CustomTransform, CustomScaler
 
 class AirDataset:
     def __init__(self, stride=1, batch_size=4, scale_window_factor=1, test_months=(3, 6, 9, 12)):
