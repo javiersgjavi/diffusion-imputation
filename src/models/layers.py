@@ -64,26 +64,21 @@ class CustomMamba(WrapperMambaModule):
             nn.LayerNorm(channels),
         ).apply(_init_weights_mamba)
 
-    def tipo0(self, h, x):
+        self.layer_norm = nn.LayerNorm(channels)
+
+    def tipo0(self, h, x, x_in):
         return h
     
-    def tipo1(self, h, x):
-        return h + x
+    def tipo1(self, h, x, x_in):
+        return self.layer_norm(h + x)
     
-    def tipo2(self, h, x):
-        if self.is_pri:
-            return h + x
-        return h
-    
-    def tipo2(self, h, x):
-        if not self.is_pri:
-            return h + x
-        return h
+    def tipo2(self, h, x, x_in):
+        return self.layer_norm(h + x_in)
     
     def forward(self, x, qk=None):
-        x = self.reshape_in(x, qk)
-        h = self.block(x)
-        h = self.fn_suma(h, x)
+        x_in = self.reshape_in(x, qk)
+        h = self.block(x_in)
+        h = self.fn_suma(h, x, x_in)
         h = self.reshape_out(h)
         return h
 
