@@ -22,13 +22,19 @@ from src.data.airquality import AQI36Dataset
 from src.models.diffusion import DiffusionImputer
 
 class Experiment:
-    def __init__(self, dataset, cfg, optimizer_type, epochs, accelerator='gpu', device=None):
+    def __init__(self, dataset, cfg, optimizer_type, epochs, accelerator='gpu', device=None, seed=42):
         self.cfg = cfg
         self.dataset = dataset
         self.optimizer_type = optimizer_type
         self.epochs = epochs
         self.accelerator = accelerator
         self.device = device
+        self.seed = seed
+
+        torch.manual_seed(self.seed)
+        torch.cuda.manual_seed(self.seed)
+        np.random.seed(self.seed)
+        random.seed(self.seed)
 
     def prepare_data(self):
         dm_params = {
@@ -38,8 +44,12 @@ class Experiment:
 
         if self.dataset == 'metr-la':
             data_class = MetrLADataset
+            dm_params['point'] = True if self.cfg['dataset']['scenario'] == 'point' else False
+
         elif self.dataset == 'pems-bay':
             data_class = PemsBayDataset
+            dm_params['point'] = True if self.cfg['dataset']['scenario'] == 'point' else False
+
         elif self.dataset == 'aqi-36':
             data_class = AQI36Dataset
 
@@ -47,7 +57,8 @@ class Experiment:
         self.dm_stride = data_class(stride='window_size', **dm_params).get_dm()
 
         if self.cfg.missing_pattern.strategy1 == 'historical' or self.cfg.missing_pattern.strategy2 == 'historical':
-            self.hist_patterns = data_class(stride='window_size', **dm_params).get_historical_patterns()
+            # Use only historical patterns for the same months as the one selected in CSDI and PriSTI
+            self.hist_patterns = data_class(test_months=(2, 5, 8, 11), **dm_params).get_historical_patterns()
         else:
             self.hist_patterns = None
 
@@ -60,6 +71,9 @@ class Experiment:
             self.cfg.config.time_steps = self.dm.window
             self.cfg.config.num_nodes = self.dm.n_nodes
 
+        self.train_dataloader = self.dm.train_dataloader()
+        self.val_dataloader = self.dm_stride.val_dataloader()
+        self.test_dataloader = self.dm_stride.test_dataloader()
 
     def prepare_optimizer(self):
         if self.optimizer_type == 0:
@@ -106,8 +120,8 @@ class Experiment:
             model_kwargs=cfg,
             optim_class=self.optimizer,
             optim_kwargs=self.optimizer_kwargs,
-            whiten_prob=list(np.arange(0,1,0.001)),
-            # whiten_prob=None,
+            # whiten_prob=list(np.arange(0,1,0.001)),
+            whiten_prob=None,
             scheduler_class=self.scheduler,
             scheduler_kwargs=self.scheduler_kwargs,
             metrics = {
@@ -138,7 +152,6 @@ class Experiment:
             accelerator=self.accelerator,
             devices=[self.device] if self.device is not None else None,
             callbacks=self.callbacks,
-            num_sanity_val_steps=None
             )
         
     def run(self):
@@ -148,11 +161,8 @@ class Experiment:
         self.prepare_model()
 
         # Train
-        train_loader = self.dm.train_dataloader()
-        val_loader = self.dm_stride.val_dataloader()
-
         train_start = time.time()
-        self.trainer.fit(self.model, train_loader, val_loader)
+        self.trainer.fit(self.model, self.train_dataloader, self.val_dataloader)
         train_end = time.time()
 
         # Test
@@ -160,7 +170,7 @@ class Experiment:
         self.model.freeze()
 
         test_start = time.time()
-        results = self.trainer.test(self.model, datamodule=self.dm_stride)
+        results = self.trainer.test(self.model, self.test_dataloader)
         test_end = time.time()
 
         training_time = train_end - train_start
@@ -189,13 +199,9 @@ class AverageExperiment:
             'optimizer_type': self.optimizer_type,
             'epochs': self.epochs,
             'accelerator': self.accelerator,
-            'device': self.device
+            'device': self.device,
+            'seed': seed,
         }
-
-
-        torch.manual_seed(self.seed)
-        np.random.seed(self.seed)
-        random.seed(self.seed)
 
         print(self.kwargs_experiment)
         self.init_result_folder()
@@ -259,6 +265,7 @@ class AverageExperiment:
     def run(self):
         n_done = pd.read_csv(f'{self.folder}/results_by_experiment.csv').shape[0]
         for i in range(n_done, self.n):
+            self.kwargs_experiment['seed'] = self.seed + i
             experiment = Experiment(**self.kwargs_experiment)
             results = experiment.run()
             self.save_results(results, i)
