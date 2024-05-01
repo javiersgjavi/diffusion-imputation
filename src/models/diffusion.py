@@ -105,6 +105,7 @@ class DiffusionImputer(Imputer):
         x_t = x_t.median(dim=-1).values.unsqueeze(-1)
         
         self.test_metrics.update(x_t, batch.y, batch.eval_mask)
+        print(self.masked_mae(x_t, batch.y, batch.eval_mask))
         self.log_metrics(self.test_metrics, batch_size=batch.batch_size)
     
     def log_metrics(self, metrics, **kwargs):

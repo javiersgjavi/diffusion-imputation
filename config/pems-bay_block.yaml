@@ -18,7 +18,7 @@ config :
   is_cross_s: true
   adj_file: pems-bay
   side_dim: 144
-  scale_window_factor: 2
+  scale_window_factor: 4
   batch_size: 4
 
 missing_pattern:
