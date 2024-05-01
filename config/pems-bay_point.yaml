@@ -2,9 +2,9 @@ defaults:
   - base
 
 dataset:
-  name: metr-la
+  name: pems-bay
   scenario: point
-  
+
 # Model hyperparameters:
 config : 
   # Base PriSTI hyperparameters
@@ -16,10 +16,14 @@ config :
   proj_t: 64
   is_cross_t: true
   is_cross_s: true
-  adj_file: metr-la
+  adj_file: pems-bay
   side_dim: 144
-  scale_window_factor: 1
+  scale_window_factor: 4
   batch_size: 4
+
+missing_pattern:
+  strategy1: point
+  strategy2: null
 
 hydra:
   run:

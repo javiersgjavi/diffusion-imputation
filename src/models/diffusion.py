@@ -1,6 +1,7 @@
 import torch
-from tqdm import tqdm
-from omegaconf import DictConfig, OmegaConf, open_dict
+from omegaconf import open_dict
+from torch import Tensor
+
 
 from contextlib import nullcontext
 from tsl.engines.imputer import Imputer
@@ -12,7 +13,7 @@ from src.models.pristi_o import PriSTIO
 from src.models.pristi_oo import PriSTIOO
 from src.models.dtigre import DTigre
 
-from src.models.data_handlers import RandomStack, SchedulerPriSTI, create_interpolation, redefine_eval_mask
+from src.data.data_handlers import RandomStack, SchedulerPriSTI, MissingPatternHandler, create_interpolation, redefine_eval_mask
 
 from schedulefree import AdamWScheduleFree
 from torch_ema import ExponentialMovingAverage
@@ -29,7 +30,7 @@ class DiffusionImputer(Imputer):
         scheduler_kwargs = kwargs['model_kwargs'].pop('scheduler_kwargs')
         self.num_T = scheduler_kwargs['num_train_timesteps']
         
-        self.t_sampler = RandomStack(self.num_T)
+        self.t_sampler = RandomStack(self.num_T, dtype_int=True)
         self.scheduler = SchedulerPriSTI(**scheduler_kwargs)
 
         model_hyperparams = self.model_kwargs.pop('config')
@@ -40,6 +41,13 @@ class DiffusionImputer(Imputer):
 
         self.use_ema = self.model_kwargs['use_ema']
         self.ema = ExponentialMovingAverage(self.parameters(), decay=self.model_kwargs['decay']) if self.use_ema else None
+
+        self.missing_pattern_handler = MissingPatternHandler(
+            strategy1=self.model_kwargs['missing_pattern']['strategy1'], 
+            strategy2=self.model_kwargs['missing_pattern']['strategy2'], 
+            hist_patterns=self.model_kwargs['hist_patterns'],
+            seq_len=model_hyperparams['time_steps']
+            )
 
         print_summary_model(self.model, model_hyperparams)
         
@@ -97,6 +105,7 @@ class DiffusionImputer(Imputer):
         x_t = x_t.median(dim=-1).values.unsqueeze(-1)
         
         self.test_metrics.update(x_t, batch.y, batch.eval_mask)
+        print(self.masked_mae(x_t, batch.y, batch.eval_mask))
         self.log_metrics(self.test_metrics, batch_size=batch.batch_size)
     
     def log_metrics(self, metrics, **kwargs):
@@ -119,11 +128,6 @@ class DiffusionImputer(Imputer):
             prog_bar=True,
             **kwargs
         )
-
-    def on_train_batch_start(self, batch, batch_idx: int) -> None:
-        super().on_train_batch_start(batch, batch_idx)
-        batch = create_interpolation(batch)
-        batch = redefine_eval_mask(batch)
 
     def on_validation_batch_start(self, batch, batch_idx: int) -> None:
         super().on_validation_batch_start(batch, batch_idx)
@@ -159,3 +163,10 @@ class DiffusionImputer(Imputer):
 
     def parameters(self):
         return self.model.parameters()
+    
+    def on_train_batch_start(self, batch, batch_idx: int) -> None:
+        super().on_train_batch_start(batch, batch_idx)
+        self.missing_pattern_handler.update_mask(batch)
+
+        batch = create_interpolation(batch)
+        batch = redefine_eval_mask(batch)

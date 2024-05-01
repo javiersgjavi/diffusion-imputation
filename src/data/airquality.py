@@ -1,22 +1,22 @@
+import torch
 import numpy as np
 from tsl.datasets import AirQuality
 from tsl.data.datamodule import SpatioTemporalDataModule
+from tsl.data.preprocessing.scalers import StandardScaler
 
-from src.data.transformations import ImputatedDataset, CustomTransform, CustomScaler
+from src.data.transformations import ImputatedDataset, CustomTransform, CustomScaler, CustomScalerAQI
 
 class AirDataset:
-    def __init__(self, stride=1, batch_size=4, scale_window_factor=1):
+    def __init__(self, stride=1, batch_size=4, scale_window_factor=1, test_months=(3, 6, 9, 12)):
         self.base_window = 32
 
         self.window_size = int(self.base_window * scale_window_factor)
         stride = self.window_size if stride == 'window_size' else stride
 
-        og_mask = AirQuality(small=self.small).mask
-
-        dataset = AirQuality(small=self.small)
+        og_mask = AirQuality(small=self.small, test_months=test_months).mask
+        dataset = AirQuality(small=self.small, test_months=test_months)
 
         connectivity = dataset.get_connectivity(
-            threshold=0.1,
             include_self=False,
             normalize_axis=1,
             layout="edge_index"
@@ -26,9 +26,9 @@ class AirDataset:
         
         torch_dataset = ImputatedDataset(
             target=dataset.dataframe(),
-            og_mask = og_mask,
-            mask = dataset.training_mask,
-            eval_mask = dataset.eval_mask,
+            og_mask=og_mask,
+            mask=dataset.training_mask,
+            eval_mask=dataset.eval_mask,
             covariates=covariates,
             transform=CustomTransform(),
             connectivity=connectivity,
@@ -52,6 +52,15 @@ class AirDataset:
         
     def get_dm(self):
         return self.dm
+    
+    def get_historical_patterns(self):
+        self.dm.setup()
+        test_loader = self.dm.test_dataloader()
+        historical_patterns = []
+        for batch in test_loader:
+            historical_patterns.append(batch.mask)
+
+        return torch.cat(historical_patterns, dim=0)
 
 
 class AQI36Dataset(AirDataset):
