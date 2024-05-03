@@ -6,7 +6,7 @@ from tsl.nn.layers import GraphConv, MultiHeadAttention, DiffConv, AdaptiveGraph
 from src.utils import init_weights_xavier, init_weights_kaiming
 from src.models.gcn import AdaptiveGCN
 
-from src.models.layers import TransformerTime, AttentionEncoded, MambaTime, Conv2DCustom, MambaNode
+from src.models.layers import TransformerTime, AttentionEncoded, Conv2DCustom, ViMamba, MambaDualScan, MambaNodeMamba, CustomBiMamba
 from einops.layers.torch import Rearrange
 
 class SideInfo(nn.Module):
@@ -77,7 +77,9 @@ class TempModule(nn.Module):
     def __init__(self, channels, heads, is_pri=False):
         super().__init__()
 
-        self.layer = MambaTime(channels, is_pri=is_pri)
+        #self.layer = MambaDualScan(channels, is_pri=is_pri)
+
+        self.layer = CustomBiMamba(channels, is_pri=is_pri)
         
         self.group_norm = nn.Sequential(
             Rearrange('b t n f -> b f t n'),
@@ -95,6 +97,7 @@ class SpaModule(nn.Module):
         self.is_pri = is_pri
         
         self.spatial_encoder = AttentionEncoded(channels, heads)
+        #self.spatial_encoder = ViMamba(channels, is_pri=is_pri)
         self.gcn = AdaptiveGCN(channels)
         
         self.norm_local = nn.Sequential(

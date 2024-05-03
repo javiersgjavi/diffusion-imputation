@@ -1,9 +1,12 @@
+results/*
+outputs/*
 pruebas.ipynb
 wandb/*
 logs/*
 tsl/*
 nohup.out
 .devcontainer
+data/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

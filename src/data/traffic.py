@@ -1,18 +1,20 @@
 import numpy as np
 import pandas as pd
 from tsl.datasets import MetrLA, PemsBay
-from tsl.data import ImputationDataset
 from tsl.ops.imputation import add_missing_values
-from tsl.transforms import MaskInput
-from tsl.data.preprocessing import  MinMaxScaler, StandardScaler
 from tsl.data.datamodule import TemporalSplitter, SpatioTemporalDataModule
 
 from src.data.transformations import ImputatedDataset, CustomTransform, CustomScaler
 
 class TrafficDataset:
-    def __init__(self, p_fault=None, p_noise=None, point=True, stride=1):
+    def __init__(self, p_fault=None, p_noise=None, point=True, stride=1, batch_size=4, scale_window_factor=1):
 
-        og_mask = self.data_class(impute_zeros=False).mask
+        self.base_window = 24
+
+        self.window_size = int(self.base_window * scale_window_factor)
+        stride = self.window_size if stride == 'window_size' else stride
+
+        og_mask = self.data_class(**self.args_dataset).mask
 
         if point:
             p_fault = 0. if p_fault is None else p_fault
@@ -23,7 +25,7 @@ class TrafficDataset:
             p_noise = 0.05 if p_noise is None else p_noise
 
         dataset = add_missing_values(
-            self.data_class(impute_zeros=False),
+            self.data_class(**self.args_dataset),
             p_fault=p_fault,
             p_noise=p_noise,
             min_seq=12,
@@ -48,7 +50,7 @@ class TrafficDataset:
             covariates=covariates,
             transform=CustomTransform(),
             connectivity=connectivity,
-            window=24,
+            window=self.window_size,
             stride=stride
         )
 
@@ -63,7 +65,7 @@ class TrafficDataset:
             dataset=torch_dataset,
             scalers=scalers,
             splitter=splitter,
-            batch_size=4,
+            batch_size=batch_size,
             )
 
     def get_dm(self):
@@ -74,6 +76,9 @@ class MetrLADataset(TrafficDataset):
         self.data_class = MetrLA
         self.seed = 9101112
         self.dataset= 'la'
+        self.args_dataset = {
+            'impute_zeros': False
+        }
         super().__init__(**kwargs)
 
 class PemsBayDataset(TrafficDataset):
@@ -81,4 +86,7 @@ class PemsBayDataset(TrafficDataset):
         self.data_class = PemsBay
         self.seed = 9101112
         self.dataset='bay'
+        self.args_dataset = {
+            'mask_zeros': False
+        }
         super().__init__(**kwargs)

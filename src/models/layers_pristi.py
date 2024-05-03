@@ -4,6 +4,8 @@ import torch.nn.functional as F
 import math
 from src.utils_pristi import *
 
+from src.models.layers import CustomBiMamba, CustomMamba
+
 
 def Attn_tem(heads=8, layers=1, channels=64):
     encoder_layer = TransformerEncoderLayer_QKV(
@@ -242,11 +244,12 @@ class SpaDependLearning(nn.Module):
 
 
 class GuidanceConstruct(nn.Module):
-    def __init__(self, channels, nheads, target_dim, order, include_self, device, is_adp, adj_file, proj_t):
+    def __init__(self, channels, nheads, target_dim, order, include_self, device, is_adp, adj_file, proj_t, time_steps=None, num_nodes=None):
         super().__init__()
         self.GCN = AdaptiveGCN(channels, order=order, include_self=include_self, device=device, is_adp=is_adp, adj_file=adj_file)
         self.attn_s = Attn_spa(dim=channels, seq_len=target_dim, k=proj_t, heads=nheads)
-        self.attn_t = Attn_tem(heads=nheads, layers=1, channels=channels)
+        # self.attn_t = Attn_tem(heads=nheads, layers=1, channels=channels)
+        self.attn_t  = CustomMamba(channels=channels, is_pri=True, t=time_steps, n=num_nodes)
         self.norm1_local = nn.GroupNorm(4, channels)
         self.norm1_attn_s = nn.GroupNorm(4, channels)
         self.norm1_attn_t = nn.GroupNorm(4, channels)
@@ -271,7 +274,7 @@ class GuidanceConstruct(nn.Module):
 
         y_attn_t1 = y.reshape(B, channel, K, L).permute(0, 2, 1, 3).reshape(B * K, channel, L)
         v = y_attn_t1.permute(2, 0, 1)
-        y_attn_t = self.attn_t(v, v, v).permute(1, 2, 0)
+        y_attn_t = self.attn_t(v).permute(1, 2, 0)
         y_attn_t = y_attn_t.reshape(B, K, channel, L).permute(0, 2, 1, 3).reshape(B, channel, K * L)
         y_attn_t = y_in1 + y_attn_t
         y_attn_t = self.norm1_attn_t(y_attn_t)

@@ -1,20 +1,16 @@
 from src.models.layers_pristi import *
 from src.utils_pristi import *
 
-from src.models.layers import CustomBiMamba, CustomMamba
 
 class SideInfo(nn.Module):
-    def __init__(self, time_steps, num_nodes):
+    def __init__(self):
         super().__init__()
+        self.embed_layer = nn.Embedding(num_embeddings=207, embedding_dim=16)
 
-        self.num_nodes = num_nodes
-        self.time_steps = time_steps
-        self.embed_layer = nn.Embedding(num_embeddings=self.num_nodes, embedding_dim=16)
-
-        self.arange = torch.arange(self.num_nodes)
+        self.arange = torch.arange(207)#.to('cuda:2')
     
     def get_time(self, B):
-        observed_tp = torch.arange(self.time_steps).unsqueeze(0)
+        observed_tp = torch.arange(24).unsqueeze(0)
         pos = torch.cat([observed_tp for _ in range(B)], dim=0)
         self.div_term = 1 / torch.pow(
             10000.0, torch.arange(0, 128, 2) / 128
@@ -39,68 +35,35 @@ class SideInfo(nn.Module):
 
         return side_info.to(cond_mask.device)
 
-class NoiseProject(nn.Module):
-    def __init__(self, side_dim, channels, diffusion_embedding_dim, nheads, target_dim, proj_t, order=2, include_self=True,
-                 device=None, is_adp=False, adj_file=None, is_cross_t=False, is_cross_s=True, num_nodes=None, time_steps=None):
+class PriSTIOO(nn.Module):
+    def __init__(self, inputdim=2, target_dim=207, is_itp=True):
         super().__init__()
-        self.diffusion_projection = nn.Linear(diffusion_embedding_dim, channels)
-        self.cond_projection = Conv1d_with_init(side_dim, 2 * channels, 1)
-        self.mid_projection = Conv1d_with_init(channels, 2 * channels, 1)
-        self.output_projection = Conv1d_with_init(channels, 2 * channels, 1)
+        config = {
+            'layers': 4,
+            'channels': 64, 
+            'nheads': 8, 
+            'diffusion_embedding_dim': 128, 
+            'schedule': 'quad', 
+            'is_adp': True, 
+            'proj_t': 64, 
+            'is_cross_t': True, 
+            'is_cross_s': True, 
+            'adj_file': 'metr-la', 
+            'side_dim': 144,
+            'device': 'cpu',#'cuda:2',
+            'num_steps': 50}
 
-        self.forward_time = CustomMamba(channels=channels, t=time_steps, n=num_nodes)
-        # self.forward_time = TemporalLearning(channels=channels, nheads=nheads, is_cross=is_cross_t)
-        self.forward_feature = SpatialLearning(channels=channels, nheads=nheads, target_dim=target_dim,
-                                               order=order, include_self=include_self, device=device, is_adp=is_adp,
-                                               adj_file=adj_file, proj_t=proj_t, is_cross=is_cross_s)
-
-    def forward(self, x, side_info, diffusion_emb, itp_info, support):
-        B, channel, K, L = x.shape
-        base_shape = x.shape
-        x = x.reshape(B, channel, K * L)
-        diffusion_emb = self.diffusion_projection(diffusion_emb).unsqueeze(-1)  # (B,channel,1)
-        y = x + diffusion_emb
-
-        y = self.forward_time(y, itp_info)
-        y = self.forward_feature(y, base_shape, support, itp_info)  # (B,channel,K*L)
-        y = self.mid_projection(y)  # (B,2*channel,K*L)
-
-        _, side_dim, _, _ = side_info.shape
-        side_info = side_info.reshape(B, side_dim, K * L)
-        side_info = self.cond_projection(side_info)  # (B,2*channel,K*L)
-        y = y + side_info
-
-        gate, filter = torch.chunk(y, 2, dim=1)
-        y = torch.sigmoid(gate) * torch.tanh(filter)  # (B,channel,K*L)
-        y = self.output_projection(y)
-
-        residual, skip = torch.chunk(y, 2, dim=1)
-        x = x.reshape(base_shape)
-        residual = residual.reshape(base_shape)
-        skip = skip.reshape(base_shape)
-
-        return (x + residual) / math.sqrt(2.0), skip
-
-class PriSTIO(nn.Module):
-    def __init__(self, inputdim=2, is_itp=True, config=None):
-        super().__init__()
-        
-        self.num_nodes = config['num_nodes']
+        self.side_info = SideInfo()
         self.channels = config["channels"]
-        self.time_steps = config["time_steps"]
-        self.batch_size = config["batch_size"]
-
-        self.side_info = SideInfo(self.time_steps, self.num_nodes)
-
         self.is_itp = is_itp
         self.itp_channels = None
         if self.is_itp:
             self.itp_channels = config["channels"]
             self.itp_projection = Conv1d_with_init(inputdim-1, self.itp_channels, 1)
 
-            self.itp_modeling = GuidanceConstruct(channels=self.itp_channels, nheads=config["nheads"], target_dim=self.num_nodes,
-                                            order=2, include_self=True, device=None, is_adp=config["is_adp"],
-                                            adj_file=config["adj_file"], proj_t=config["proj_t"], time_steps = config["time_steps"], num_nodes = config['num_nodes'])
+            self.itp_modeling = GuidanceConstruct(channels=self.itp_channels, nheads=config["nheads"], target_dim=target_dim,
+                                            order=2, include_self=True, device=config["device"], is_adp=config["is_adp"],
+                                            adj_file=config["adj_file"], proj_t=config["proj_t"])
             self.cond_projection = Conv1d_with_init(config["side_dim"], self.itp_channels, 1)
 
         self.diffusion_embedding = DiffusionEmbedding(
@@ -108,14 +71,8 @@ class PriSTIO(nn.Module):
             embedding_dim=config["diffusion_embedding_dim"],
         )
 
-        if config["adj_file"] == 'AQI36':
-            self.adj = get_adj_AQI36()
-        elif config["adj_file"] == 'metr-la':
-            self.adj = get_similarity_metrla(thr=0.1)
-        elif config["adj_file"] == 'pems-bay':
-            self.adj = get_similarity_pemsbay(thr=0.1)
-
-        self.support = compute_support_gwn(self.adj)
+        self.adj = get_similarity_metrla(thr=0.1)
+        self.support = compute_support_gwn(self.adj, device=config["device"])
         self.is_adp = config["is_adp"]
         if self.is_adp:
             node_num = self.adj.shape[0]
@@ -135,29 +92,30 @@ class PriSTIO(nn.Module):
                     channels=self.channels,
                     diffusion_embedding_dim=config["diffusion_embedding_dim"],
                     nheads=config["nheads"],
-                    target_dim=self.num_nodes,
+                    target_dim=target_dim,
                     proj_t=config["proj_t"],
                     is_adp=config["is_adp"],
-                    device=None,
+                    device=config["device"],
                     adj_file=config["adj_file"],
                     is_cross_t=config["is_cross_t"],
                     is_cross_s=config["is_cross_s"],
-                    time_steps = config["time_steps"],
-                    num_nodes = config['num_nodes']
                 )
                 for _ in range(config["layers"])
             ]
         )
 
-    def forward(self, x, itp_x, u, diffusion_step, edge_index, edge_weight):
+    def forward(self, x_ta_t, x_co, u, t, edges, weights):
+        x_ta_t = x_ta_t.permute(0, 3, 2, 1)
+        x_co = x_co.permute(0, 3, 2, 1)
+        u = u.permute(0, 3, 2, 1)
+        u = self.side_info(x_co)
 
+        return self.forward_o(x_ta_t, u, t, x_co, None).permute(0, 2, 1).unsqueeze(-1)
+
+    def forward_o(self, x, side_info, diffusion_step, itp_x, cond_mask):
 
         if self.is_itp:
-            x = torch.cat([x, itp_x], dim=-1)
-
-        x = x.permute(0, 3, 2, 1) # B, input_dim, K, 
-        side_info = self.side_info(x)
-
+            x = torch.cat([x, itp_x], dim=1)
         B, inputdim, K, L = x.shape
 
         x = x.reshape(B, inputdim, K * L)
@@ -186,7 +144,49 @@ class PriSTIO(nn.Module):
         x = x.reshape(B, self.channels, K * L)
         x = self.output_projection1(x)  # (B,channel,K*L)
         x = F.relu(x)
-        x = self.output_projection2(x)  # (B,1, K*L)
-        x = x.reshape(B, 1, K, L).permute(0, 3, 2, 1)
-
+        x = self.output_projection2(x)  # (B,1,K*L)
+        x = x.reshape(B, K, L)
         return x
+
+
+class NoiseProject(nn.Module):
+    def __init__(self, side_dim, channels, diffusion_embedding_dim, nheads, target_dim, proj_t, order=2, include_self=True,
+                 device=None, is_adp=False, adj_file=None, is_cross_t=False, is_cross_s=True):
+        super().__init__()
+        self.diffusion_projection = nn.Linear(diffusion_embedding_dim, channels)
+        self.cond_projection = Conv1d_with_init(side_dim, 2 * channels, 1)
+        self.mid_projection = Conv1d_with_init(channels, 2 * channels, 1)
+        self.output_projection = Conv1d_with_init(channels, 2 * channels, 1)
+
+        self.forward_time = TemporalLearning(channels=channels, nheads=nheads, is_cross=is_cross_t)
+        self.forward_feature = SpatialLearning(channels=channels, nheads=nheads, target_dim=target_dim,
+                                               order=order, include_self=include_self, device=device, is_adp=is_adp,
+                                               adj_file=adj_file, proj_t=proj_t, is_cross=is_cross_s)
+
+    def forward(self, x, side_info, diffusion_emb, itp_info, support):
+        B, channel, K, L = x.shape
+        base_shape = x.shape
+        x = x.reshape(B, channel, K * L)
+        diffusion_emb = self.diffusion_projection(diffusion_emb).unsqueeze(-1)  # (B,channel,1)
+        y = x + diffusion_emb
+
+        y = self.forward_time(y, base_shape, itp_info)
+        y = self.forward_feature(y, base_shape, support, itp_info)  # (B,channel,K*L)
+        y = self.mid_projection(y)  # (B,2*channel,K*L)
+
+        _, side_dim, _, _ = side_info.shape
+        side_info = side_info.reshape(B, side_dim, K * L)
+        side_info = self.cond_projection(side_info)  # (B,2*channel,K*L)
+        y = y + side_info
+
+        gate, filter = torch.chunk(y, 2, dim=1)
+        y = torch.sigmoid(gate) * torch.tanh(filter)  # (B,channel,K*L)
+        y = self.output_projection(y)
+
+        residual, skip = torch.chunk(y, 2, dim=1)
+        x = x.reshape(base_shape)
+        residual = residual.reshape(base_shape)
+        skip = skip.reshape(base_shape)
+
+        return (x + residual) / math.sqrt(2.0), skip
+
