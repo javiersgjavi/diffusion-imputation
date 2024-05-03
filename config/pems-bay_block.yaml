@@ -3,7 +3,7 @@ defaults:
 
 dataset:
   name: pems-bay
-  scenario: point
+  scenario: block
 
 # Model hyperparameters:
 config : 
