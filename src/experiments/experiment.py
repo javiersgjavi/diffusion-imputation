@@ -90,7 +90,7 @@ class Experiment:
             steps_epoch = self.dm.train_len//self.dm.batch_size
 
             optimizer = AdamWScheduleFree
-            optimizer_kwargs = dict({'lr': 1e-2, 'weight_decay': 1e-6, 'warmup_steps': steps_epoch*10, 'betas': (0.95, 0.99), 'eps': 1e-9})
+            optimizer_kwargs = dict({'lr': 1e-2, 'weight_decay': 2e-6, 'warmup_steps': steps_epoch*5, 'betas': (0.9, 0.999), 'eps': 1e-8})
 
             scheduler = None
             scheduler_kwargs = None
