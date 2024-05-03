@@ -26,14 +26,14 @@ class WrapperMambaModule(nn.Module):
         b = bn//self.n
         x = x.reshape(t, b, self.n, f)
         x = x.permute(0,2,1,3).reshape(b*self.n, self.t, f)
-        return x, x
+        return x
 
     def reshape_nem(self, x, qk):
         b, f, n, t = qk.shape
         x = x.reshape(b, f, n, t).permute(0, 2, 3, 1).reshape(b*n, t, f)
         qk = qk.permute(0, 2, 3, 1).reshape(b*n, t, f)
         x_sum = x + qk if self.sum else torch.cat([x, qk], dim=-1)
-        return x_sum, x
+        return x_sum
 
     def reshape_out(self, x):
         if not self.is_pri:
@@ -45,16 +45,14 @@ class WrapperMambaModule(nn.Module):
     
     def reshape_in(self, x, qk=None):
         if self.is_pri:
-            x, x_0 = self.reshape_pri(x)
+            x = self.reshape_pri(x)
         elif not self.is_pri:
-            x, x_0 = self.reshape_nem(x, qk)
-        return x, x_0
+            x = self.reshape_nem(x, qk)
+        return x
     
 class CustomMamba(WrapperMambaModule):
     def __init__(self, channels, dropout=0.1, is_pri=False, t=24, n=207):
         super().__init__(is_pri, t, n)
-
-        self.fn_suma = self.tipo1
 
         self.block = nn.Sequential(
             nn.LayerNorm(channels) if not is_pri else nn.Identity(),
@@ -66,19 +64,11 @@ class CustomMamba(WrapperMambaModule):
 
         self.layer_norm = nn.LayerNorm(channels)
 
-    def tipo0(self, h, x, x_in):
-        return h
-    
-    def tipo1(self, h, x, x_in):
-        return self.layer_norm(h + x)
-    
-    def tipo2(self, h, x, x_in):
-        return self.layer_norm(h + x_in)
     
     def forward(self, x, qk=None):
-        x_in, x_0 = self.reshape_in(x, qk)
-        h = self.block(x_in)
-        h = self.fn_suma(h, x_0, x_in)
+        x = self.reshape_in(x, qk)
+        h = self.block(x)
+        h = self.layer_norm(h+x)
         h = self.reshape_out(h)
         return h
 
