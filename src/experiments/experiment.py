@@ -4,11 +4,11 @@ import random
 import numpy as np
 import pandas as pd
 import numpy as np
-from omegaconf import DictConfig, OmegaConf, open_dict
+from omegaconf import open_dict
 
 import torch
 from schedulefree import AdamWScheduleFree
-from torch.optim import Adam, AdamW
+from torch.optim import Adam
 from torch.optim.lr_scheduler import MultiStepLR, CosineAnnealingLR
 
 from pytorch_lightning.loggers import TensorBoardLogger
