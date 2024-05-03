@@ -12,6 +12,7 @@ from src.models.pristi import PriSTI
 from src.models.pristi_o import PriSTIO
 from src.models.pristi_oo import PriSTIOO
 from src.models.dtigre import DTigre
+from src.models.csdi import diff_CSDI
 
 from src.data.data_handlers import RandomStack, SchedulerPriSTI, MissingPatternHandler, create_interpolation, redefine_eval_mask
 
@@ -37,7 +38,7 @@ class DiffusionImputer(Imputer):
         with open_dict(model_hyperparams):
             model_hyperparams.num_steps = self.num_T
 
-        self.model = PriSTIO(config = model_hyperparams)
+        self.model = diff_CSDI(config = model_hyperparams)
 
         self.use_ema = self.model_kwargs['use_ema']
         self.ema = ExponentialMovingAverage(self.parameters(), decay=self.model_kwargs['decay']) if self.use_ema else None
@@ -49,7 +50,7 @@ class DiffusionImputer(Imputer):
             seq_len=model_hyperparams['time_steps']
             )
 
-        print_summary_model(self.model, model_hyperparams)
+        # print_summary_model(self.model, model_hyperparams)
         
     def get_imputation(self, batch):
         mask_co = batch.mask
@@ -60,7 +61,7 @@ class DiffusionImputer(Imputer):
         
         for i in reversed(range(self.num_T)):
             t = (torch.ones(x_ta_t.shape[0]) * i).to(x_ta_t.device)
-            noise_pred = self.model(x_ta_t, cond_info['x_co'], cond_info['u'], t, edge_index, edge_weight)
+            noise_pred = self.model(x_ta_t, cond_info['x_co'], t)
             x_ta_t = self.scheduler.clean_backwards(x_ta_t, noise_pred, mask_co, t)
 
         x_0 = batch.transform['x'].inverse_transform(x_ta_t)
@@ -74,7 +75,7 @@ class DiffusionImputer(Imputer):
         t = self.t_sampler.get(mask_ta.shape[0]).to(mask_ta.device) if t is None else t
         x_ta_t, cond_info, noise = self.scheduler.prepare_data(batch,t=t)
 
-        noise_pred  = self.model(x_ta_t, cond_info['x_co'], cond_info['u'], t, edge_index, edge_weight)
+        noise_pred  = self.model(x_ta_t, cond_info['x_co'], t)
 
         return self.loss_fn(noise, noise_pred, mask_ta)
 

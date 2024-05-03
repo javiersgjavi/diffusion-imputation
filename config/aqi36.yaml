@@ -2,7 +2,7 @@ defaults:
   - base
 
 scheduler_kwargs:
-  num_train_timesteps: 100
+  num_train_timesteps: 50
 
 dataset:
   name: aqi-36
@@ -21,7 +21,7 @@ config :
   is_cross_s: true
   adj_file: AQI36
   side_dim: 144
-  scale_window_factor: 2.66
+  scale_window_factor: 1
   batch_size: 16
 
 missing_pattern:
