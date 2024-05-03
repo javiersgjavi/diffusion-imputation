@@ -16,9 +16,9 @@ config :
   proj_t: 64
   is_cross_t: true
   is_cross_s: true
-  adj_file: metr-la
+  adj_file: ${dataset.name}
   side_dim: 144
-  scale_window_factor: 4
+  scale_window_factor: 1
   batch_size: 4
 
 missing_pattern:
@@ -27,4 +27,4 @@ missing_pattern:
 
 hydra:
   run:
-    dir: ./results/${config.adj_file}/
+    dir: ./results/${dataset.name}_${dataset.scenario}/

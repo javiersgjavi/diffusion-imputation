@@ -30,4 +30,4 @@ missing_pattern:
 
 hydra:
   run:
-    dir: ./results/${dataset.name}/
+    dir: ./results/${dataset.name}_${dataset.scenario}/

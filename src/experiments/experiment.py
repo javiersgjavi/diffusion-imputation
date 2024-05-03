@@ -219,9 +219,7 @@ class AverageExperiment:
             results.to_csv(f'{self.folder}/results_by_experiment.csv')
 
     def save_results(self, results, i):
-        print(results)
         results_df = pd.read_csv(f'{self.folder}/results_by_experiment.csv', index_col='Unnamed: 0')
-        print(results_df)
         results_df.loc[i] = [
             results['test_mae'], 
             results['test_mse'], 
