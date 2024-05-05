@@ -61,7 +61,7 @@ class DiffusionImputer(Imputer):
         
         for i in reversed(range(self.num_T)):
             t = (torch.ones(x_ta_t.shape[0]) * i).to(x_ta_t.device)
-            noise_pred = self.model(x_ta_t, cond_info['x_co'], t)
+            noise_pred = self.model(x_ta_t, cond_info['x_co'], cond_info['mask_co'], t)
             x_ta_t = self.scheduler.clean_backwards(x_ta_t, noise_pred, mask_co, t)
 
         x_0 = batch.transform['x'].inverse_transform(x_ta_t)
@@ -75,7 +75,7 @@ class DiffusionImputer(Imputer):
         t = self.t_sampler.get(mask_ta.shape[0]).to(mask_ta.device) if t is None else t
         x_ta_t, cond_info, noise = self.scheduler.prepare_data(batch,t=t)
 
-        noise_pred  = self.model(x_ta_t, cond_info['x_co'], t)
+        noise_pred  = self.model(x_ta_t, cond_info['x_co'], cond_info['mask_co'], t)
 
         return self.loss_fn(noise, noise_pred, mask_ta)
 

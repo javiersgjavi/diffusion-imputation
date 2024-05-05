@@ -123,10 +123,12 @@ class diff_CSDI(nn.Module):
             ]
         )
 
-    def forward(self, x, x_co, diffusion_step):
+    def forward(self, x, x_co, mask, diffusion_step):
+        x_co = x_co * mask
         diffusion_step = diffusion_step.long()
         x = x.permute(0, 3, 2, 1)
         cond_info = self.side_info(x)
+        # mask = mask.permute(0, 3, 2, 1)
         x_co = x_co.permute(0, 3, 2, 1)
         x = torch.cat([x, x_co], dim=1)
 
