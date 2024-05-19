@@ -7,11 +7,8 @@ from contextlib import nullcontext
 from tsl.engines.imputer import Imputer
 from tsl.metrics import torch as torch_metrics
 
-from src.models.tgnn_bi_hardcoded import BiModel
-from src.models.pristi import PriSTI
-from src.models.pristi_o import PriSTIO
-from src.models.pristi_oo import PriSTIOO
-from src.models.dtigre import DTigre
+from models.pristi import PriSTI
+from src.models.timba import Timba
 
 from src.data.data_handlers import RandomStack, SchedulerPriSTI, MissingPatternHandler, create_interpolation, redefine_eval_mask
 

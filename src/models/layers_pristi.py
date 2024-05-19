@@ -247,8 +247,7 @@ class GuidanceConstruct(nn.Module):
     def __init__(self, channels, nheads, target_dim, order, include_self, device, is_adp, adj_file, proj_t, time_steps=None, num_nodes=None):
         super().__init__()
         self.GCN = AdaptiveGCN(channels, order=order, include_self=include_self, device=device, is_adp=is_adp, adj_file=adj_file)
-        self.attn_s = Attn_spa(dim=channels, seq_len=target_dim, k=proj_t, heads=nheads)
-        # self.attn_t = Attn_tem(heads=nheads, layers=1, channels=channels)
+        self.attn_t = Attn_tem(heads=nheads, layers=1, channels=channels)
         self.attn_t  = CustomMamba(channels=channels, is_pri=True, t=time_steps, n=num_nodes)
         self.norm1_local = nn.GroupNorm(4, channels)
         self.norm1_attn_s = nn.GroupNorm(4, channels)
@@ -286,6 +285,11 @@ class GuidanceConstruct(nn.Module):
 
         y = self.norm2(y)
         return y
+
+class GuidanceConstructTimba(GuidanceConstruct):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.attn_t  = CustomMamba(channels=kwargs['channels'], is_pri=True, t=kwargs['time_steps'], n=kwargs['num_nodes'])
 
 
 def default(val, default_val):

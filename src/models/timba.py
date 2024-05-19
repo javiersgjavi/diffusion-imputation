@@ -1,7 +1,7 @@
 from src.models.layers_pristi import *
 from src.utils_pristi import *
 
-from src.models.layers import CustomBiMamba, CustomMamba
+from src.models.layers import CustomMamba
 
 class SideInfo(nn.Module):
     def __init__(self, time_steps, num_nodes):
@@ -49,7 +49,6 @@ class NoiseProject(nn.Module):
         self.output_projection = Conv1d_with_init(channels, 2 * channels, 1)
 
         self.forward_time = CustomMamba(channels=channels, t=time_steps, n=num_nodes)
-        # self.forward_time = TemporalLearning(channels=channels, nheads=nheads, is_cross=is_cross_t)
         self.forward_feature = SpatialLearning(channels=channels, nheads=nheads, target_dim=target_dim,
                                                order=order, include_self=include_self, device=device, is_adp=is_adp,
                                                adj_file=adj_file, proj_t=proj_t, is_cross=is_cross_s)
@@ -81,7 +80,7 @@ class NoiseProject(nn.Module):
 
         return (x + residual) / math.sqrt(2.0), skip
 
-class PriSTIO(nn.Module):
+class Timba(nn.Module):
     def __init__(self, inputdim=2, is_itp=True, config=None):
         super().__init__()
         
@@ -98,7 +97,7 @@ class PriSTIO(nn.Module):
             self.itp_channels = config["channels"]
             self.itp_projection = Conv1d_with_init(inputdim-1, self.itp_channels, 1)
 
-            self.itp_modeling = GuidanceConstruct(channels=self.itp_channels, nheads=config["nheads"], target_dim=self.num_nodes,
+            self.itp_modeling = GuidanceConstructTimba(channels=self.itp_channels, nheads=config["nheads"], target_dim=self.num_nodes,
                                             order=2, include_self=True, device=None, is_adp=config["is_adp"],
                                             adj_file=config["adj_file"], proj_t=config["proj_t"], time_steps = config["time_steps"], num_nodes = config['num_nodes'])
             self.cond_projection = Conv1d_with_init(config["side_dim"], self.itp_channels, 1)
