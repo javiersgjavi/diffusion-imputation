@@ -80,7 +80,7 @@ class NoiseProject(nn.Module):
 
         return (x + residual) / math.sqrt(2.0), skip
 
-class Timba(nn.Module):
+class TIMBA(nn.Module):
     def __init__(self, inputdim=2, is_itp=True, config=None):
         super().__init__()
         

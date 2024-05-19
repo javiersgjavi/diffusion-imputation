@@ -7,9 +7,9 @@ from contextlib import nullcontext
 from tsl.engines.imputer import Imputer
 from tsl.metrics import torch as torch_metrics
 
-from src.models.csdi import diff_CSDI
+from src.models.csdi import CSDI
 from models.pristi import PriSTI
-from src.models.timba import Timba
+from src.models.timba import TIMBA
 
 from src.data.data_handlers import RandomStack, SchedulerPriSTI, MissingPatternHandler, create_interpolation, redefine_eval_mask
 
