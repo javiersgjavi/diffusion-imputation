@@ -27,4 +27,4 @@ missing_pattern:
 
 hydra:
   run:
-    dir: ./results/${dataset.name}_${dataset.scenario}/
+    dir: ./results/${dataset.name}_${dataset.scenario}_x${config.scale_window_factor}/
