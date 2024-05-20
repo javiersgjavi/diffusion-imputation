@@ -4,10 +4,8 @@ import torch.nn as nn
 from mamba_ssm import Mamba
 from src.utils import _init_weights_mamba
 
-from einops.layers.torch import Rearrange
-# from VMamba.classification.models.vmamba import VSSBlock
 
-from Vim.mamba.mamba_ssm.modules.mamba_simple import Mamba as BiMamba
+from src.models.bimamba.modules.mamba_simple import BiMamba
 
 class WrapperMambaModule(nn.Module):
     def __init__(self, is_pri=False, t=24, n=207, sum=True):
