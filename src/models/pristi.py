@@ -1,7 +1,7 @@
 from src.models.layers_pristi import *
 from src.utils_pristi import *
 
-from src.models.layers import CustomBiMamba, CustomMamba
+from src.models.layers import CustomMamba
 
 class SideInfo(nn.Module):
     def __init__(self, time_steps, num_nodes):
@@ -60,7 +60,7 @@ class NoiseProject(nn.Module):
         diffusion_emb = self.diffusion_projection(diffusion_emb).unsqueeze(-1)  # (B,channel,1)
         y = x + diffusion_emb
 
-        y = self.forward_time(y, itp_info)
+        y = self.forward_time(y, base_shape, itp_info)
         y = self.forward_feature(y, base_shape, support, itp_info)  # (B,channel,K*L)
         y = self.mid_projection(y)  # (B,2*channel,K*L)
 
@@ -148,7 +148,7 @@ class PriSTI(nn.Module):
             ]
         )
 
-    def forward(self, x, itp_x, u, diffusion_step, edge_index, edge_weight):
+    def forward(self, x, itp_x, u, diffusion_step):
 
 
         if self.is_itp:

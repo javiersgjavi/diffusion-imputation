@@ -103,7 +103,10 @@ class CSDI(nn.Module):
             embedding_dim=config["diffusion_embedding_dim"],
         )
 
-        self.side_info = SideInfo(32, 36)
+        self.side_info = SideInfo(
+            time_steps=config['time_steps'], 
+            num_nodes=config["num_nodes"]
+            )
 
         self.input_projection = Conv1d_with_init(inputdim, self.channels, 1)
         self.output_projection1 = Conv1d_with_init(self.channels, self.channels, 1)

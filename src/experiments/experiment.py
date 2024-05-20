@@ -90,7 +90,9 @@ class Experiment:
             steps_epoch = self.dm.train_len//self.dm.batch_size
 
             optimizer = AdamWScheduleFree
-            optimizer_kwargs = dict({'lr': 1e-2, 'weight_decay': 2e-6, 'warmup_steps': steps_epoch*5, 'betas': (0.9, 0.999), 'eps': 1e-8})
+            #optimizer_kwargs = dict({'lr': 1e-2, 'weight_decay': 2e-6, 'warmup_steps': steps_epoch*5, 'betas': (0.9, 0.999), 'eps': 1e-8}) AQI 38
+            #optimizer_kwargs = dict({'lr': 0.5e-2, 'weight_decay': 1e-6, 'warmup_steps': int(steps_epoch*0.75), 'betas': (0.95, 0.999), 'eps': 1e-8})
+            optimizer_kwargs = dict({'lr':   5e-3, 'weight_decay': 0, 'warmup_steps': int(steps_epoch*0.75), 'betas': (0.98, 0.999), 'eps': 1e-8})
 
             scheduler = None
             scheduler_kwargs = None
@@ -152,6 +154,7 @@ class Experiment:
             accelerator=self.accelerator,
             devices=[self.device] if self.device is not None else None,
             callbacks=self.callbacks,
+            gradient_clip_val=1.0,
             )
         
     def run(self):
@@ -166,6 +169,7 @@ class Experiment:
         train_end = time.time()
 
         # Test
+        
         self.model.load_model(self.callbacks[0].best_model_path)
         self.model.freeze()
 

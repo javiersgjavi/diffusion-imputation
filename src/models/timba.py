@@ -148,7 +148,7 @@ class TIMBA(nn.Module):
             ]
         )
 
-    def forward(self, x, itp_x, u, diffusion_step, edge_index, edge_weight):
+    def forward(self, x, itp_x, u, diffusion_step):
 
 
         if self.is_itp:
