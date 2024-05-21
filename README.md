@@ -6,7 +6,7 @@ Steps to replicate the results of the paper:
 
 - Give execution permissions to the installation file: ```chmod +x setup.sh```
 
-- Run the file: ```./setup.sh```
+- Run the setup file, this steps can be very slow: ```./setup.sh```
 
 - See the IDs of the running containers: ```docker ps```
 
