@@ -13,7 +13,7 @@ def main(cfg: DictConfig):
         cfg=cfg,
         optimizer_type=0,
         seed=42,
-        epochs=200,
+        epochs=50,
         accelerator='gpu',
         device=0,
         n=5

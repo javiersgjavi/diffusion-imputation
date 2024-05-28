@@ -2,7 +2,7 @@ defaults:
   - base
 
 scheduler_kwargs:
-  num_train_timesteps: 50
+  num_train_timesteps: 100
 
 dataset:
   name: aqi-36
