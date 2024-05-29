@@ -7,11 +7,9 @@ from contextlib import nullcontext
 from tsl.engines.imputer import Imputer
 from tsl.metrics import torch as torch_metrics
 
-from src.models.tgnn_bi_hardcoded import BiModel
+from src.models.csdi import CSDI
 from src.models.pristi import PriSTI
-from src.models.pristi_o import PriSTIO
-from src.models.pristi_oo import PriSTIOO
-from src.models.dtigre import DTigre
+from src.models.timba import TIMBA
 
 from src.data.data_handlers import RandomStack, SchedulerPriSTI, MissingPatternHandler, create_interpolation, redefine_eval_mask
 
@@ -37,7 +35,16 @@ class DiffusionImputer(Imputer):
         with open_dict(model_hyperparams):
             model_hyperparams.num_steps = self.num_T
 
-        self.model = PriSTIO(config = model_hyperparams)
+        model_name = self.model_kwargs.pop('model_name')
+
+        if model_name == 'csdi':
+            model_class = CSDI
+        elif model_name == 'pristi':
+            model_class = PriSTI
+        elif model_name == 'timba':
+            model_class = TIMBA
+
+        self.model = model_class(config = model_hyperparams)
 
         self.use_ema = self.model_kwargs['use_ema']
         self.ema = ExponentialMovingAverage(self.parameters(), decay=self.model_kwargs['decay']) if self.use_ema else None
@@ -53,14 +60,12 @@ class DiffusionImputer(Imputer):
         
     def get_imputation(self, batch):
         mask_co = batch.mask
-        edge_index = batch.edge_index
-        edge_weight = batch.edge_weight
 
         x_ta_t, cond_info, _ = self.scheduler.prepare_data(batch)
         
         for i in reversed(range(self.num_T)):
             t = (torch.ones(x_ta_t.shape[0]) * i).to(x_ta_t.device)
-            noise_pred = self.model(x_ta_t, cond_info['x_co'], cond_info['u'], t, edge_index, edge_weight)
+            noise_pred = self.model(x_ta_t, cond_info['x_co'], cond_info['mask_co'], t)
             x_ta_t = self.scheduler.clean_backwards(x_ta_t, noise_pred, mask_co, t)
 
         x_0 = batch.transform['x'].inverse_transform(x_ta_t)
@@ -68,13 +73,11 @@ class DiffusionImputer(Imputer):
     
     def calculate_loss(self, batch, t=None):
         mask_ta = batch.eval_mask
-        edge_index = batch.edge_index
-        edge_weight = batch.edge_weight
 
         t = self.t_sampler.get(mask_ta.shape[0]).to(mask_ta.device) if t is None else t
         x_ta_t, cond_info, noise = self.scheduler.prepare_data(batch,t=t)
 
-        noise_pred  = self.model(x_ta_t, cond_info['x_co'], cond_info['u'], t, edge_index, edge_weight)
+        noise_pred  = self.model(x_ta_t, cond_info['x_co'], cond_info['mask_co'], t)
 
         return self.loss_fn(noise, noise_pred, mask_ta)
 
@@ -95,6 +98,9 @@ class DiffusionImputer(Imputer):
         return loss
 
     def test_step(self, batch, batch_idx):
+
+        import time
+        t = time.time()
         x_t_list = []
 
         for _ in range(100):
@@ -107,6 +113,7 @@ class DiffusionImputer(Imputer):
         self.test_metrics.update(x_t, batch.y, batch.eval_mask)
         print(self.masked_mae(x_t, batch.y, batch.eval_mask))
         self.log_metrics(self.test_metrics, batch_size=batch.batch_size)
+        print(time.time() - t)
     
     def log_metrics(self, metrics, **kwargs):
         self.log_dict(
@@ -128,6 +135,13 @@ class DiffusionImputer(Imputer):
             prog_bar=True,
             **kwargs
         )
+
+    def on_train_batch_start(self, batch, batch_idx: int) -> None:
+        super().on_train_batch_start(batch, batch_idx)
+        self.missing_pattern_handler.update_mask(batch)
+
+        batch = create_interpolation(batch)
+        batch = redefine_eval_mask(batch)
 
     def on_validation_batch_start(self, batch, batch_idx: int) -> None:
         super().on_validation_batch_start(batch, batch_idx)
@@ -164,9 +178,4 @@ class DiffusionImputer(Imputer):
     def parameters(self):
         return self.model.parameters()
     
-    def on_train_batch_start(self, batch, batch_idx: int) -> None:
-        super().on_train_batch_start(batch, batch_idx)
-        self.missing_pattern_handler.update_mask(batch)
-
-        batch = create_interpolation(batch)
-        batch = redefine_eval_mask(batch)
+    

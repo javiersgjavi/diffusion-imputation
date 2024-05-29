@@ -18,7 +18,7 @@ config :
   is_cross_s: true
   adj_file: ${dataset.name}
   side_dim: 144
-  scale_window_factor: 4
+  scale_window_factor: 1
   batch_size: 4
 
 missing_pattern:
@@ -27,4 +27,4 @@ missing_pattern:
 
 hydra:
   run:
-    dir: ./results/${dataset.name}_${dataset.scenario}/
+    dir: ./results/${model_name}_${dataset.name}_${dataset.scenario}_x${config.scale_window_factor}/

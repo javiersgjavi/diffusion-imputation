@@ -10,6 +10,6 @@ scheduler_kwargs:
     beta_end: 0.2
     clip_sample: false
     
-# Optimizer params:
+model_name: "timba"
 
 

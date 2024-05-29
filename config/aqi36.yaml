@@ -2,7 +2,7 @@ defaults:
   - base
 
 scheduler_kwargs:
-  num_train_timesteps: 100
+  num_train_timesteps: 50
 
 dataset:
   name: aqi-36
@@ -30,4 +30,4 @@ missing_pattern:
 
 hydra:
   run:
-    dir: ./results/${dataset.name}/
+    dir: ./results/${model_name}_${dataset.name}_x${config.scale_window_factor}/
