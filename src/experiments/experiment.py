@@ -19,6 +19,7 @@ from tsl.metrics import torch as torch_metrics
 
 from src.data.traffic import MetrLADataset, PemsBayDataset
 from src.data.airquality import AQI36Dataset
+from src.data.mimiciii import MimicIIIDataset
 from src.models.diffusion import DiffusionImputer
 
 class Experiment:
@@ -52,6 +53,9 @@ class Experiment:
 
         elif self.dataset == 'aqi-36':
             data_class = AQI36Dataset
+
+        elif self.dataset == 'mimic-iii':
+            data_class = MimicIIIDataset
 
         self.dm = data_class(**dm_params).get_dm()
         self.dm_stride = data_class(stride='window_size', **dm_params).get_dm()
