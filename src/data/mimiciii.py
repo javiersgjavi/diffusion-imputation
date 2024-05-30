@@ -43,6 +43,8 @@ class MimicIIIDataset:
         connectivity = self._calculate_connectivity(data_pd)
         covariates = {'u': np.zeros((data_pd.shape[0], 2))}
 
+        data[np.isnan(data).astype(bool)] = 0
+
         
         torch_dataset = ImputatedDataset(
             target=data.reshape(data.shape[0], data.shape[1], 1),

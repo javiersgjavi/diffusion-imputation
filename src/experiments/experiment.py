@@ -159,6 +159,7 @@ class Experiment:
             devices=[self.device] if self.device is not None else None,
             callbacks=self.callbacks,
             gradient_clip_val=1.0,
+            check_val_every_n_epoch=1
             )
         
     def run(self):

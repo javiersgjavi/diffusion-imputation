@@ -3,20 +3,19 @@ import hydra
 from omegaconf import DictConfig
 
 sys.path.append('./')
-from src.experiments.experiment import AverageExperiment
+from src.experiments.impute_experiment import ImputeExperiment
 
-@hydra.main(config_name="base.yaml", config_path="../config/base/")
+@hydra.main(config_name="base.yaml", config_path="../config/impute/")
 def main(cfg: DictConfig):
-
-    experiment = AverageExperiment(
+    experiment = ImputeExperiment(
         dataset=cfg.dataset.name,
         cfg=cfg,
         optimizer_type=0,
         seed=42,
-        epochs=50,
+        epochs=200,
         accelerator='gpu',
         device=0,
-        n=5
+        weights_path=cfg.weights.path,
     )
 
     experiment.run()
