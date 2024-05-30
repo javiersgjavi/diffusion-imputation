@@ -9,7 +9,7 @@ class ImputeExperiment(Experiment):
         super().__init__(**kwargs)
         self.weights_path = weights_path
 
-        self.save_path = f'../../imputed_data/{self.dataset}/'
+        self.save_path = f'../../imputed_data/{self.dataset}/{self.cfg.model_name}'
         
     def run(self):
 
