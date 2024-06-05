@@ -15,7 +15,7 @@ def main(cfg: DictConfig):
         epochs=200,
         accelerator='gpu',
         device=0,
-        weights_path=cfg.weights.path,
+        weights_path=f'{cfg.weights.path}/{cfg.model_name}.ckpt',
     )
 
     experiment.run()

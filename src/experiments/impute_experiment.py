@@ -1,3 +1,4 @@
+import os
 import torch
 import numpy as np
 from tqdm import tqdm
@@ -9,10 +10,27 @@ class ImputeExperiment(Experiment):
         super().__init__(**kwargs)
         self.weights_path = weights_path
 
-        self.save_path = f'../../imputed_data/{self.dataset}/{self.cfg.model_name}'
+        self.save_path = f'../../imputed_data/{self.dataset}/{self.cfg.model_name}/'
+
+    def clear_data(self, data):
+        data = torch.cat(data, dim=0).cpu().detach()
+        if self.cfg.dataset.name == 'mimic-iii':
+            data = data.squeeze().permute(0, 2, 1)
+        return data.numpy()
+    
+    def impute_dataloader(self, dataloader, name):
+        imputed_samples = []
+        for batch in tqdm(iter(dataloader), desc=f'Imputing {name} data'):
+            batch.to(self.device)
+            batch_imputed = self.model.predict_step(batch, 0)
+            imputed_samples.append(batch_imputed)
+        imputed_samples = self.clear_data(imputed_samples)
+        np.save(f'{self.save_path}{name}_samples.npy', imputed_samples)
         
     def run(self):
 
+        os.makedirs(self.save_path, exist_ok=True)
+        
         self.prepare_data()
         self.prepare_optimizer()
         self.prepare_model()
@@ -20,35 +38,8 @@ class ImputeExperiment(Experiment):
         self.model.load_model(self.weights_path)
         self.model.freeze()
 
-        train_samples = []
-        val_samples = []
-        test_samples = []
-
         self.train_dataloader = self.dm.train_dataloader(shuffle=False)
-        print(self.train_dataloader)
 
-        for batch in tqdm(iter(self.train_dataloader), desc='Imputing training data'):
-            batch.to(self.device)
-            batch_imputed = self.model.predict_step(batch, 0)
-            train_samples.append(batch)
-        
-        for batch in tqdm(iter(self.val_dataloader), desc='Imputing validation data'):
-            batch.to(self.device)
-            batch_imputed = self.model.predict_step(batch, 0)
-            val_samples.append(batch)
-
-        for batch in tqdm(iter(self.test_dataloader), desc='Imputing test data'):
-            batch.to(self.device)
-            batch_imputed = self.model.predict_step(batch, 0)
-            test_samples.append(batch)
-
-        train_samples = torch.cat(train_samples, dim=0)
-        val_samples = torch.cat(val_samples, dim=0)
-        test_samples = torch.cat(test_samples, dim=0)
-
-        np.save(f'{self.save_path}train_samples.npy', train_samples.numpy())
-        np.save(f'{self.save_path}val_samples.npy', val_samples.numpy())
-        np.save(f'{self.save_path}test_samples.npy', test_samples.numpy())
-
-
-
+        self.impute_dataloader(self.test_dataloader, 'test')
+        self.impute_dataloader(self.val_dataloader, 'val')
+        self.impute_dataloader(self.train_dataloader, 'train')
