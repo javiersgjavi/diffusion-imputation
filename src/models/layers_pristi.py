@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import math
 from src.utils_pristi import *
 
-from src.models.layers import CustomBiMamba, CustomMamba
+from src.models.layers import CustomMamba
 
 
 def Attn_tem(heads=8, layers=1, channels=64):
@@ -248,8 +248,7 @@ class GuidanceConstruct(nn.Module):
         super().__init__()
         self.GCN = AdaptiveGCN(channels, order=order, include_self=include_self, device=device, is_adp=is_adp, adj_file=adj_file)
         self.attn_s = Attn_spa(dim=channels, seq_len=target_dim, k=proj_t, heads=nheads)
-        # self.attn_t = Attn_tem(heads=nheads, layers=1, channels=channels)
-        self.attn_t  = CustomMamba(channels=channels, is_pri=True, t=time_steps, n=num_nodes)
+        self.attn_t = Attn_tem(heads=nheads, layers=1, channels=channels)
         self.norm1_local = nn.GroupNorm(4, channels)
         self.norm1_attn_s = nn.GroupNorm(4, channels)
         self.norm1_attn_t = nn.GroupNorm(4, channels)
@@ -257,6 +256,39 @@ class GuidanceConstruct(nn.Module):
         self.ff_linear2 = nn.Linear(channels * 2, channels)
         self.norm2 = nn.GroupNorm(4, channels)
 
+    def forward(self, y, base_shape, support):
+        B, channel, K, L = base_shape
+        y_in1 = y
+
+        y_local = self.GCN(y, base_shape, support)       # [B, C, K*L]
+        y_local = y_in1 + y_local
+        y_local = self.norm1_local(y_local)
+
+        y_attn_s1 = y.reshape(B, channel, K, L).permute(0, 3, 1, 2).reshape(B * L, channel, K)
+        y_attn_s = self.attn_s(y_attn_s1.permute(0, 2, 1)).permute(0, 2, 1)
+        y_attn_s = y_attn_s.reshape(B, L, channel, K).permute(0, 2, 3, 1).reshape(B, channel, K * L)
+        y_attn_s = y_in1 + y_attn_s
+        y_attn_s = self.norm1_attn_s(y_attn_s)
+
+        y_attn_t1 = y.reshape(B, channel, K, L).permute(0, 2, 1, 3).reshape(B * K, channel, L)
+        v = y_attn_t1.permute(2, 0, 1)
+        y_attn_t = self.attn_t(v, v, v).permute(1, 2, 0)
+        y_attn_t = y_attn_t.reshape(B, K, channel, L).permute(0, 2, 1, 3).reshape(B, channel, K * L)
+        y_attn_t = y_in1 + y_attn_t
+        y_attn_t = self.norm1_attn_t(y_attn_t)
+
+        y_in2 = y_local + y_attn_s + y_attn_t
+        y = F.relu(self.ff_linear1(y_in2.permute(0, 2, 1)))
+        y = self.ff_linear2(y).permute(0, 2, 1)
+        y = y + y_in2
+
+        y = self.norm2(y)
+        return y
+
+class GuidanceConstructTimba(GuidanceConstruct):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.attn_t  = CustomMamba(channels=kwargs['channels'], is_pri=True, t=kwargs['time_steps'], n=kwargs['num_nodes'])
 
     def forward(self, y, base_shape, support):
         B, channel, K, L = base_shape
@@ -286,7 +318,6 @@ class GuidanceConstruct(nn.Module):
 
         y = self.norm2(y)
         return y
-
 
 def default(val, default_val):
     return val if val is not None else default_val
