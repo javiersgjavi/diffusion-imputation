@@ -20,15 +20,15 @@ class ImputeExperiment(Experiment):
     
     def impute_dataloader(self, dataloader, name):
         imputed_samples = []
-        for batch in tqdm(iter(dataloader), desc=f'Imputing {name} data'):
-            batch.to(self.device)
+        for batch in tqdm(dataloader, desc=f'Imputing {name} data'):
+            batch = batch.to(self.device)
             batch_imputed = self.model.predict_step(batch, 0)
             imputed_samples.append(batch_imputed)
         imputed_samples = self.clear_data(imputed_samples)
         np.save(f'{self.save_path}{name}_samples.npy', imputed_samples)
         
     def run(self):
-
+        self.cfg.config.batch_size = 1
         os.makedirs(self.save_path, exist_ok=True)
         
         self.prepare_data()
