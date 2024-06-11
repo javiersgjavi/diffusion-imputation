@@ -7,6 +7,7 @@ scheduler_kwargs:
 dataset:
   name: aqi-36
   scenario: point
+  masked_sensors: [14, 31]
 
 # Model hyperparameters:
 config : 
@@ -30,4 +31,4 @@ missing_pattern:
 
 hydra:
   run:
-    dir: ./results/${model_name}_${dataset.name}_x${config.scale_window_factor}/
+    dir: ./results/vs_${model_name}_${dataset.name}_x${config.scale_window_factor}/

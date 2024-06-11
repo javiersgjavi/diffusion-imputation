@@ -6,14 +6,14 @@ from tsl.data.datamodule import SpatioTemporalDataModule
 from src.data.transformations import ImputatedDataset, CustomTransform, CustomScaler
 
 class AirDataset:
-    def __init__(self, stride=1, batch_size=4, scale_window_factor=1, test_months=(3, 6, 9, 12)):
-        self.base_window = 32
+    def __init__(self, stride=1, batch_size=4, scale_window_factor=1, test_months=(3, 6, 9, 12), masked_sensors=None):
+        self.base_window = 36
 
         self.window_size = int(self.base_window * scale_window_factor)
         stride = self.window_size if stride == 'window_size' else stride
 
-        og_mask = AirQuality(small=self.small, test_months=test_months).mask
-        dataset = AirQuality(small=self.small, test_months=test_months)
+        og_mask = AirQuality(small=self.small, test_months=test_months, masked_sensors=masked_sensors).mask
+        dataset = AirQuality(small=self.small, test_months=test_months, masked_sensors=masked_sensors)
 
         connectivity = dataset.get_connectivity(
             include_self=False,
