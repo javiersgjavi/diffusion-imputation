@@ -8,8 +8,6 @@ from src.experiments.experiment import Experiment
 class ImputeExperiment(Experiment):
     def __init__(self, weights_path, **kwargs):
         super().__init__(**kwargs)
-        self.weights_path = weights_path
-
         self.save_path = f'../../imputed_data/{self.dataset}/{self.cfg.model_name}/'
 
     def clear_data(self, data):
@@ -35,7 +33,7 @@ class ImputeExperiment(Experiment):
         self.prepare_optimizer()
         self.prepare_model()
         
-        self.model.load_model(self.weights_path)
+        self.model.load_model(self.cfg.weights.path)
         self.model.freeze()
 
         self.train_dataloader = self.dm.train_dataloader(shuffle=False)

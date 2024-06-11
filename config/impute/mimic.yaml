@@ -27,7 +27,7 @@ missing_pattern:
 
 weights:
   # Path to the pretrained weights
-  path: ../../weights/impute/mimic-iii
+  path: ../../weights/${dataset.name}/${model_name}.ckpt
 
 hydra:
   run:
