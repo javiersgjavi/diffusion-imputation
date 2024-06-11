@@ -16,7 +16,7 @@ def main(cfg: DictConfig):
         epochs=50,
         accelerator='gpu',
         device=0,
-        n=6
+        n=5
     )
 
     experiment.run()

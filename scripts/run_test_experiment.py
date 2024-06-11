@@ -3,21 +3,23 @@ import hydra
 from omegaconf import DictConfig
 
 sys.path.append('./')
-from src.experiments.impute_experiment import ImputeExperiment
+from src.experiments.test_experiment import TestExperiment
 
-@hydra.main(config_name="base.yaml", config_path="../config/impute/")
+@hydra.main(config_name="base.yaml", config_path="../config/test/")
 def main(cfg: DictConfig):
-    experiment = ImputeExperiment(
+
+    experiment = TestExperiment(
         dataset=cfg.dataset.name,
         cfg=cfg,
         optimizer_type=0,
         seed=42,
-        epochs=200,
+        epochs=50,
         accelerator='gpu',
         device=0,
     )
 
-    experiment.run()
+    results = experiment.run()
+    print(results)
 
 if __name__=='__main__':
     main()

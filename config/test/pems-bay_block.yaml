@@ -2,9 +2,9 @@ defaults:
   - base
 
 dataset:
-  name: metr-la
+  name: pems-bay
   scenario: block
-  
+
 # Model hyperparameters:
 config : 
   # Base PriSTI hyperparameters
@@ -28,7 +28,7 @@ missing_pattern:
 weights:
   # Path to the pretrained weights
   path: ../../weights/${dataset.name}_${dataset.scenario}/${model_name}.ckpt
-
+  
 hydra:
   run:
-    dir: ./results/sensitivity_${model_name}_${dataset.name}_${dataset.scenario}_x${config.scale_window_factor}/
+    dir: ./results/test_${model_name}_${dataset.name}_${dataset.scenario}_x${config.scale_window_factor}/

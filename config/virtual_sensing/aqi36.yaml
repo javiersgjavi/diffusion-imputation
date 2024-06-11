@@ -1,10 +1,14 @@
 defaults:
   - base
 
+scheduler_kwargs:
+  num_train_timesteps: 100
+
 dataset:
-  name: mimic-iii
+  name: aqi-36
   scenario: point
-  
+  masked_sensors: [14, 31]
+
 # Model hyperparameters:
 config : 
   # Base PriSTI hyperparameters
@@ -13,22 +17,18 @@ config :
   nheads: 8
   diffusion_embedding_dim: 128
   is_adp: true
-  proj_t: 64
+  proj_t: 16
   is_cross_t: true
   is_cross_s: true
-  adj_file: ${dataset.name}
+  adj_file: AQI36
   side_dim: 144
   scale_window_factor: 1
-  batch_size: 4
+  batch_size: 16
 
 missing_pattern:
   strategy1: point
-  strategy2: null
-
-weights:
-  # Path to the pretrained weights
-  path: ../../weights/${dataset.name}/${model_name}.ckpt
+  strategy2: historical
 
 hydra:
   run:
-    dir: ./results/impute_${model_name}_${dataset.name}_${dataset.scenario}_x${config.scale_window_factor}/
+    dir: ./results/vs_${model_name}_${dataset.name}_x${config.scale_window_factor}/

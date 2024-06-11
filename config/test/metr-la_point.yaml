@@ -3,7 +3,7 @@ defaults:
 
 dataset:
   name: metr-la
-  scenario: block
+  scenario: point
   
 # Model hyperparameters:
 config : 
@@ -23,7 +23,7 @@ config :
 
 missing_pattern:
   strategy1: point
-  strategy2: block
+  strategy2: null
 
 weights:
   # Path to the pretrained weights
@@ -31,4 +31,4 @@ weights:
 
 hydra:
   run:
-    dir: ./results/sensitivity_${model_name}_${dataset.name}_${dataset.scenario}_x${config.scale_window_factor}/
+    dir: ./results/test_${model_name}_${dataset.name}_${dataset.scenario}_x${config.scale_window_factor}/

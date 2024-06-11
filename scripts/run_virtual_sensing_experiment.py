@@ -3,18 +3,20 @@ import hydra
 from omegaconf import DictConfig
 
 sys.path.append('./')
-from src.experiments.impute_experiment import ImputeExperiment
+from src.experiments.virtual_sensing_experiment import VirtualSensingExperimentAverage
 
-@hydra.main(config_name="base.yaml", config_path="../config/impute/")
+@hydra.main(config_name="metr-la_point.yaml", config_path="../config/virtual_sensing/")
 def main(cfg: DictConfig):
-    experiment = ImputeExperiment(
+
+    experiment = VirtualSensingExperimentAverage(
         dataset=cfg.dataset.name,
         cfg=cfg,
         optimizer_type=0,
         seed=42,
-        epochs=200,
+        epochs=1,
         accelerator='gpu',
         device=0,
+        n=3
     )
 
     experiment.run()

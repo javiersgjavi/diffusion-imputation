@@ -27,7 +27,7 @@ missing_pattern:
 
 weights:
   # Path to the pretrained weights
-  path: ../../weights/metr-la_point/
+  path: ../../weights/${dataset.name}_${dataset.scenario}/${model_name}.ckpt
   
 hydra:
   run:

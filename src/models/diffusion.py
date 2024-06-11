@@ -1,5 +1,6 @@
 import time
 import torch
+from copy import deepcopy
 from omegaconf import open_dict
 from torch import Tensor
 
@@ -122,6 +123,27 @@ class DiffusionImputer(Imputer):
         x_imputed = torch.where(batch.og_mask, batch.y, x_imputed)
         return x_imputed
     
+    def test_step_virtual_sensing(self, batch, masked_sensors):
+        batch = create_interpolation(batch)
+
+        dict_sensors = {i:0 for i in masked_sensors}
+        res = {
+            'mae': dict_sensors,
+            'mse': deepcopy(dict_sensors)
+            }
+
+        x_t = self.generate_median_imputation(batch)
+        
+        for sensor in masked_sensors:
+            eval_mask = batch.eval_mask[:, :, sensor, :]
+            y = batch.y[:, :, sensor, :]
+            x = x_t[:, :, sensor, :]
+
+            res['mae'][sensor] = self.masked_mae(x, y, eval_mask).cpu().item()
+            res['mse'][sensor] = self.loss_fn(x, y, eval_mask).cpu().item()
+
+        return res
+
     def log_metrics(self, metrics, **kwargs):
         self.log_dict(
             metrics,
@@ -184,5 +206,4 @@ class DiffusionImputer(Imputer):
 
     def parameters(self):
         return self.model.parameters()
-    
     

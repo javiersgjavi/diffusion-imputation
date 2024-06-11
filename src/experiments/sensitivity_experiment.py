@@ -12,7 +12,7 @@ class MissingExperiment(Experiment):
         self.p_fault, self.p_noise = kwargs.pop('fault_noise')
         super().__init__(**kwargs)
 
-        self.weights_path = f'{self.cfg.weights.path}{self.cfg.model_name}.ckpt'
+        self.weights_path = self.cfg.weights.path
 
     def prepare_data(self):
         dm_params = {
