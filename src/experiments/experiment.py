@@ -4,11 +4,11 @@ import random
 import numpy as np
 import pandas as pd
 import numpy as np
-from omegaconf import DictConfig, OmegaConf, open_dict
+from omegaconf import open_dict
 
 import torch
 from schedulefree import AdamWScheduleFree
-from torch.optim import Adam, AdamW
+from torch.optim import Adam
 from torch.optim.lr_scheduler import MultiStepLR, CosineAnnealingLR
 
 from pytorch_lightning.loggers import TensorBoardLogger
@@ -19,6 +19,7 @@ from tsl.metrics import torch as torch_metrics
 
 from src.data.traffic import MetrLADataset, PemsBayDataset
 from src.data.airquality import AQI36Dataset
+from src.data.mimiciii import MimicIIIDataset
 from src.models.diffusion import DiffusionImputer
 
 class Experiment:
@@ -52,6 +53,9 @@ class Experiment:
 
         elif self.dataset == 'aqi-36':
             data_class = AQI36Dataset
+
+        elif self.dataset == 'mimic-iii':
+            data_class = MimicIIIDataset
 
         self.dm = data_class(**dm_params).get_dm()
         self.dm_stride = data_class(stride='window_size', **dm_params).get_dm()
@@ -155,6 +159,7 @@ class Experiment:
             devices=[self.device] if self.device is not None else None,
             callbacks=self.callbacks,
             gradient_clip_val=1.0,
+            check_val_every_n_epoch=1
             )
         
     def run(self):

@@ -1,3 +1,5 @@
+*.ipynb
+imputed_data/*
 results/*
 outputs/*
 pruebas.ipynb
@@ -7,6 +9,7 @@ tsl/*
 nohup.out
 .devcontainer
 data/*
+weights/impute/mimic-iii/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

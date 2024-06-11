@@ -1,3 +1,4 @@
+import time
 import torch
 from omegaconf import open_dict
 from torch import Tensor
@@ -97,23 +98,29 @@ class DiffusionImputer(Imputer):
         self.log_loss('val', loss, batch_size=batch.batch_size)
         return loss
 
-    def test_step(self, batch, batch_idx):
-
-        import time
-        t = time.time()
+    def generate_median_imputation(self, batch):
         x_t_list = []
-
         for _ in range(100):
             x_t = self.get_imputation(batch)
             x_t_list.append(x_t)
 
         x_t = torch.cat(x_t_list, dim=-1)
-        x_t = x_t.median(dim=-1).values.unsqueeze(-1)
+        return x_t.median(dim=-1).values.unsqueeze(-1)
+
+    def test_step(self, batch, batch_idx):
+        t = time.time()
+        x_t = self.generate_median_imputation(batch)
+        print(time.time() - t)
+        print(self.masked_mae(x_t, batch.y, batch.eval_mask))
         
         self.test_metrics.update(x_t, batch.y, batch.eval_mask)
-        print(self.masked_mae(x_t, batch.y, batch.eval_mask))
         self.log_metrics(self.test_metrics, batch_size=batch.batch_size)
-        print(time.time() - t)
+
+    def predict_step(self, batch, batch_idx):
+        batch = create_interpolation(batch)
+        x_imputed = self.generate_median_imputation(batch)
+        x_imputed = torch.where(batch.og_mask, batch.y, x_imputed)
+        return x_imputed
     
     def log_metrics(self, metrics, **kwargs):
         self.log_dict(
