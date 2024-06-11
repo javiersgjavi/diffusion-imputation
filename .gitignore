@@ -1,3 +1,5 @@
+*.ipynb
+imputed_data/*
 results/*
 outputs/*
 pruebas.ipynb

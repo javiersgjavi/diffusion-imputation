@@ -3,12 +3,11 @@ import hydra
 from omegaconf import DictConfig
 
 sys.path.append('./')
-from src.experiments.experiment import AverageExperiment
+from src.experiments.sensitivity_experiment import MissingAverageExperiment
 
-@hydra.main(config_name="metr-la_point.yaml", config_path="../config")
+@hydra.main(config_name="metr-la_point.yaml", config_path="../config/sensitivity/")
 def main(cfg: DictConfig):
 
-    weights_file = ''
     experiment = MissingAverageExperiment(
         dataset=cfg.dataset.name,
         cfg=cfg,
@@ -17,7 +16,7 @@ def main(cfg: DictConfig):
         epochs=50,
         accelerator='gpu',
         device=0,
-        n=5
+        n=2
     )
 
     experiment.run()

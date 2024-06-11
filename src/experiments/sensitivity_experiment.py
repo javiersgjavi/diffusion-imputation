@@ -1,7 +1,7 @@
 import os
 import numpy as np
 import pandas as pd
-import numpy as np
+from tqdm import tqdm
 from omegaconf import open_dict
 
 from src.data.traffic import MetrLADataset
@@ -9,8 +9,10 @@ from src.experiments.experiment import Experiment
 
 class MissingExperiment(Experiment):
     def __init__(self, **kwargs):
-        self.p_fault, self.p_noise = kwargs['fault_noise']
+        self.p_fault, self.p_noise = kwargs.pop('fault_noise')
         super().__init__(**kwargs)
+
+        self.weights_path = f'{self.cfg.weights.path}{self.cfg.model_name}.ckpt'
 
     def prepare_data(self):
         dm_params = {
@@ -24,6 +26,11 @@ class MissingExperiment(Experiment):
         self.dm = MetrLADataset(**dm_params).get_dm()
         self.dm_stride = MetrLADataset(stride='window_size', **dm_params).get_dm()
 
+        self.dm.setup()
+        self.dm_stride.setup()
+
+        self.hist_patterns = None
+
         print(self.dm)
 
         with open_dict(self.cfg):
@@ -34,14 +41,16 @@ class MissingExperiment(Experiment):
         self.val_dataloader = self.dm_stride.val_dataloader()
         self.test_dataloader = self.dm_stride.test_dataloader()
 
-    def run(self, path):
+    def run(self):
 
         self.prepare_data()
         self.prepare_optimizer()
+
         self.prepare_model()
+        print(self.trainer)
 
         # Test
-        self.model.load_model(path)
+        self.model.load_model(self.weights_path)
         self.model.freeze()
 
         results = self.trainer.test(self.model, self.test_dataloader)
@@ -58,9 +67,9 @@ class MissingAverageExperiment:
         self.accelerator = accelerator
         self.device = device
         self.n = n
-        self.folder = f'./metrics/'
+        self.folder = f'./metrics'
         self.file_results = f'{self.folder}/results_by_rate.csv'
-        self.file_average_results = f'{self.folder}/results_rate.csv'
+        self.file_average_results = f'{self.folder}/results_average.csv'
 
         self.kwargs_experiment = {
             'dataset': self.dataset,
@@ -99,8 +108,9 @@ class MissingAverageExperiment:
         self.init_result_folder()
 
     def init_result_folder(self):
+        # Create results file if not exists
         os.makedirs(self.folder, exist_ok=True)
-        if len(os.listdir(self.folder)) == 0:
+        if not os.path.exists(self.file_results):
             results = pd.DataFrame(columns=[
                 'mae', 
                 'mse', 
@@ -109,6 +119,20 @@ class MissingAverageExperiment:
                 'id'
                 ])
             results.to_csv(self.file_results)
+
+        # Create average results file if not exists
+        if not os.path.exists(self.file_average_results):
+            average_results = pd.DataFrame(columns=[
+                'mae_mean',
+                'mae_std',
+                'mse_mean',
+                'mse_std',
+                'mre_mean',
+                'mre_std',
+                'rate'
+            ])
+            average_results.to_csv(self.file_average_results)
+        
 
     def save_results(self, results):
         results_df = pd.read_csv(self.file_results, index_col='Unnamed: 0')
@@ -129,37 +153,39 @@ class MissingAverageExperiment:
                 'mse_std',
                 'mre_mean',
                 'mre_std',
-                'rate'
             ])
         
         results_by_experiment = pd.read_csv(self.file_results, index_col='Unnamed: 0')
+        for rate in np.sort(results_by_experiment['rate'].unique()):
+            results_rate = results_by_experiment[results_by_experiment['rate'] == rate]
+            average_results.loc[rate] = [
+                results_rate['mae'].mean(),
+                results_rate['mae'].std(),
+                results_rate['mse'].mean(),
+                results_rate['mse'].std(),
+                results_rate['mre'].mean(),
+                results_rate['mre'].std(),
+            ]
         
-        average_results.loc[0] = [
-            results_by_experiment['mae'].mean(),
-            results_by_experiment['mae'].std(),
-            results_by_experiment['mse'].mean(),
-            results_by_experiment['mse'].std(),
-            results_by_experiment['mre'].mean(),
-            results_by_experiment['mre'].std(),
-            results_by_experiment['rate'].mean(),
-        ]
-
         average_results.to_csv(self.file_average_results)
 
     def run(self):
         for rate in np.arange(0.1, 1, 0.1):
-            for i in range(self.n):
+            rate = np.round(rate, 2)
+            for i in tqdm(range(self.n), desc=f'Running missing rate {rate}'):
+                i = np.round(i, 2)
                 results = pd.read_csv(self.file_results)
                 done = results[(results['rate'] == rate) & (results['id'] == i)].shape[0] > 0
                 if not done:
                     self.kwargs_experiment['seed'] = self.seed + i
                     self.kwargs_experiment['fault_noise'] = self.missing_rates_point[rate]
 
-                    experiment = Experiment(**self.kwargs_experiment)
+                    experiment = MissingExperiment(**self.kwargs_experiment)
                     results = experiment.run()
+                    print(results)
 
-                    results[0]['rate'] = rate
-                    results[0]['id'] = i
+                    results['rate'] = rate
+                    results['id'] = i
 
                     self.save_results(results)
 
