@@ -45,14 +45,15 @@ class WrapperMambaModule(nn.Module):
         return x
     
 class CustomMamba(WrapperMambaModule):
-    def __init__(self, channels, dropout=0.1, is_pri=False, t=24, n=207):
+    def __init__(self, channels, dropout=0.1, is_pri=False, t=24, n=207, bidirectional=True):
         super().__init__(is_pri, t, n)
+
+        mamba_block = BiMamba(d_model=channels, bimamba_type='v2') if bidirectional else Mamba(d_model=channels)
 
         self.block = nn.Sequential(
             nn.LayerNorm(channels) if not is_pri else nn.Identity(),
             nn.Dropout(dropout),
-            #Mamba(d_model=channels).apply(_init_weights_mamba),
-            BiMamba(d_model=channels, bimamba_type='v2').apply(_init_weights_mamba),
+            mamba_block.apply(_init_weights_mamba),
             nn.LayerNorm(channels),
         ).apply(_init_weights_mamba)
 

@@ -287,8 +287,9 @@ class GuidanceConstruct(nn.Module):
 
 class GuidanceConstructTimba(GuidanceConstruct):
     def __init__(self, *args, **kwargs):
+        bidirectional = kwargs.pop('bidirectional')
         super().__init__(*args, **kwargs)
-        self.attn_t  = CustomMamba(channels=kwargs['channels'], is_pri=True, t=kwargs['time_steps'], n=kwargs['num_nodes'])
+        self.attn_t  = CustomMamba(channels=kwargs['channels'], is_pri=True, t=kwargs['time_steps'], n=kwargs['num_nodes'], bidirectional=bidirectional)
 
     def forward(self, y, base_shape, support):
         B, channel, K, L = base_shape
