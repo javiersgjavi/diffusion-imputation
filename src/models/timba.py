@@ -43,14 +43,14 @@ class SideInfo(nn.Module):
 
 class NoiseProject(nn.Module):
     def __init__(self, side_dim, channels, diffusion_embedding_dim, nheads, target_dim, proj_t, order=2, include_self=True,
-                 device=None, is_adp=False, adj_file=None, is_cross_t=False, is_cross_s=True, num_nodes=None, time_steps=None):
+                 device=None, is_adp=False, adj_file=None, is_cross_t=False, is_cross_s=True, num_nodes=None, time_steps=None, bidirectional=False):
         super().__init__()
         self.diffusion_projection = nn.Linear(diffusion_embedding_dim, channels)
         self.cond_projection = Conv1d_with_init(side_dim, 2 * channels, 1)
         self.mid_projection = Conv1d_with_init(channels, 2 * channels, 1)
         self.output_projection = Conv1d_with_init(channels, 2 * channels, 1)
 
-        self.forward_time = CustomMamba(channels=channels, t=time_steps, n=num_nodes)
+        self.forward_time = CustomMamba(channels=channels, t=time_steps, n=num_nodes, bidirectional=bidirectional)
         self.forward_feature = SpatialLearning(channels=channels, nheads=nheads, target_dim=target_dim,
                                                order=order, include_self=include_self, device=device, is_adp=is_adp,
                                                adj_file=adj_file, proj_t=proj_t, is_cross=is_cross_s)
@@ -90,6 +90,7 @@ class TIMBA(nn.Module):
         self.channels = config["channels"]
         self.time_steps = config["time_steps"]
         self.batch_size = config["batch_size"]
+        self.bidirectional = config["bidirectional"]
 
         self.side_info = SideInfo(self.time_steps, self.num_nodes)
 
@@ -101,7 +102,7 @@ class TIMBA(nn.Module):
 
             self.itp_modeling = GuidanceConstructTimba(channels=self.itp_channels, nheads=config["nheads"], target_dim=self.num_nodes,
                                             order=2, include_self=True, device=None, is_adp=config["is_adp"],
-                                            adj_file=config["adj_file"], proj_t=config["proj_t"], time_steps = config["time_steps"], num_nodes = config['num_nodes'])
+                                            adj_file=config["adj_file"], proj_t=config["proj_t"], time_steps = config["time_steps"], num_nodes = config['num_nodes'], bidirectional=self.bidirectional)
             self.cond_projection = Conv1d_with_init(config["side_dim"], self.itp_channels, 1)
 
         self.diffusion_embedding = DiffusionEmbedding(
@@ -146,7 +147,8 @@ class TIMBA(nn.Module):
                     is_cross_t=config["is_cross_t"],
                     is_cross_s=config["is_cross_s"],
                     time_steps = config["time_steps"],
-                    num_nodes = config['num_nodes']
+                    num_nodes = config['num_nodes'],
+                    bidirectional=self.bidirectional
                 )
                 for _ in range(config["layers"])
             ]

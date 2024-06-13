@@ -12,4 +12,5 @@ scheduler_kwargs:
     
 model_name: "timba"
 
-
+config:
+    bidirectional: true
