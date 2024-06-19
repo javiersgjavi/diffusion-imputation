@@ -96,6 +96,20 @@ def get_similarity_mimic(thr=0.1, force_symmetric=False, sparse=False):
         adj = sps.coo_matrix(adj)
     return adj
 
+def get_similarity_mimic_challenge(thr=0.1, force_symmetric=False, sparse=False):
+    dist = np.load('../../data/mimic-iii_challenge/mimic_graph.npy')
+    finite_dist = dist.reshape(-1)
+    finite_dist = finite_dist[~np.isinf(finite_dist)]
+    sigma = finite_dist.std()
+    adj = np.exp(-np.square(dist / sigma))
+    adj[adj < thr] = 0.
+    if force_symmetric:
+        adj = np.maximum.reduce([adj, adj.T])
+    if sparse:
+        import scipy.sparse as sps
+        adj = sps.coo_matrix(adj)
+    return adj
+
 # in Graph-wavenet
 def asym_adj(adj):
     adj = sp.coo_matrix(adj)
