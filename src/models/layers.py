@@ -1,11 +1,12 @@
 import torch
 import torch.nn as nn
 
-from mamba_ssm import Mamba
+from mamba_ssm import Mamba, Mamba2
 from src.utils import _init_weights_mamba
 
 
 from src.models.bimamba.modules.mamba_simple import BiMamba
+from src.models.bimamba.modules.mamba2_simple import BiMamba2
 
 class WrapperMambaModule(nn.Module):
     def __init__(self, is_pri=False, t=24, n=207, sum=True):
@@ -49,6 +50,10 @@ class CustomMamba(WrapperMambaModule):
         super().__init__(is_pri, t, n)
 
         mamba_block = BiMamba(d_model=channels, bimamba_type='v2') if bidirectional else Mamba(d_model=channels)
+        # mamba_block = Mamba2(d_model=channels, headdim=128//4, use_mem_eff_path=False, expand=4)
+        # mamba_block = Mamba(d_model=channels)
+        # mamba_block = BiMamba2(d_model=channels, headdim=128//4, use_mem_eff_path=False, expand=4)
+
 
         self.block = nn.Sequential(
             nn.LayerNorm(channels) if not is_pri else nn.Identity(),
@@ -59,7 +64,6 @@ class CustomMamba(WrapperMambaModule):
 
         self.layer_norm = nn.LayerNorm(channels)
 
-    
     def forward(self, x, qk=None):
         x = self.reshape_in(x, qk)
         h = self.block(x)

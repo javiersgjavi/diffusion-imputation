@@ -5,7 +5,7 @@ from omegaconf import DictConfig
 sys.path.append('./')
 from src.experiments.virtual_sensing_experiment import VirtualSensingExperimentAverage
 
-@hydra.main(config_name="metr-la_point.yaml", config_path="../config/virtual_sensing/")
+@hydra.main(config_name="base.yaml", config_path="../config/virtual_sensing/")
 def main(cfg: DictConfig):
 
     experiment = VirtualSensingExperimentAverage(
@@ -13,10 +13,10 @@ def main(cfg: DictConfig):
         cfg=cfg,
         optimizer_type=0,
         seed=42,
-        epochs=1,
+        epochs=50,
         accelerator='gpu',
         device=0,
-        n=3
+        n=5
     )
 
     experiment.run()

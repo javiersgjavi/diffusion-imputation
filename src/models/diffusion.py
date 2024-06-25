@@ -142,6 +142,11 @@ class DiffusionImputer(Imputer):
             res['mae'][sensor] = self.masked_mae(x, y, eval_mask).cpu().item()
             res['mse'][sensor] = self.loss_fn(x, y, eval_mask).cpu().item()
 
+        print(y[eval_mask])
+        print(x[eval_mask])
+        print(y[eval_mask] - x[eval_mask])
+        print(res)
+
         return res
 
     def log_metrics(self, metrics, **kwargs):
