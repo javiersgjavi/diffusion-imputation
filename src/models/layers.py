@@ -87,6 +87,6 @@ class CustomMamba(WrapperMambaModule):
         for sub_block in self.sub_blocks:
             h = sub_block(h) + h
 
-        h = self.layer_norm(h + qk)
+        h = self.layer_norm(h)
         h = self.reshape_out(h)
         return h
