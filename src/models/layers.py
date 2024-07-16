@@ -50,10 +50,7 @@ class CustomMamba(WrapperMambaModule):
 
 
         mamba_block = BiMamba(d_model=channels, bimamba_type='v2') if bidirectional else Mamba(d_model=channels)
-        # mamba_block = Mamba2(d_model=channels, headdim=128//4, use_mem_eff_path=False, expand=4)
-        # mamba_block = Mamba(d_model=channels)
-        # mamba_block = BiMamba2(d_model=channels, headdim=128//4, use_mem_eff_path=False, expand=4)
-        # mamba_block = BiMamba2(d_model=channels, headdim=128//8, use_mem_eff_path=False, expand=2)
+       # mamba_block = BiMamba2(d_model=channels, headdim=128//8, use_mem_eff_path=False, expand=2)
 
 
         self.block = nn.Sequential(
