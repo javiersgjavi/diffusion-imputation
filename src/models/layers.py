@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 
 from mamba_ssm import Mamba, Mamba2
+from src.models.bimamba.modules.hydra import Hydra
 from src.utils import _init_weights_mamba
 
 
@@ -49,9 +50,9 @@ class CustomMamba(WrapperMambaModule):
         super().__init__(is_pri, t, n)
 
 
-        mamba_block = BiMamba(d_model=channels, bimamba_type='v2') if bidirectional else Mamba(d_model=channels)
+        # mamba_block = BiMamba(d_model=channels, bimamba_type='v2') if bidirectional else Mamba(d_model=channels)
        # mamba_block = BiMamba2(d_model=channels, headdim=128//8, use_mem_eff_path=False, expand=2)
-
+        mamba_block = Hydra(d_model=channels, expand=2)
 
         self.block = nn.Sequential(
             nn.LayerNorm(channels) if not is_pri else nn.Identity(),
